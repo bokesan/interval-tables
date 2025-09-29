@@ -1,3 +1,7 @@
+*~
+*.bak
+*.tmp
+*.log
 *.FASL
 *.fasl
 *.lisp-temp
