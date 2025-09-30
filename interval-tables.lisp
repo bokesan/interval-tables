@@ -84,13 +84,12 @@
 
 
 (declaim (inline %make-interval-table interval-table-less interval-table-bounds
-		 interval-table-tree interval-tree-read-only))
+		 interval-table-tree))
 
 (defstruct (interval-table (:constructor %make-interval-table))
   (less nil :type (function (t t) boolean) :read-only t)
   (bounds :closed :type interval-bounds :read-only t)
-  (tree nil :type (or null node))
-  (read-only nil :type boolean :read-only t))
+  (tree nil :type (or null node)))
 
 #+SBCL (declaim (sb-ext:freeze-type interval-table))
 
@@ -130,16 +129,14 @@
 		   &key
 		   (:bounds interval-bounds)
 		   (:initial-contents sequence)
-		   (:initial-contents* sequence)
-		   (:read-only boolean))
+		   (:initial-contents* sequence))
 		  interval-table)
 	make-interval-table))
 
 (defun make-interval-table (less &key
 				   (bounds :closed)
 				   initial-contents
-				   initial-contents*
-				   read-only)
+				   initial-contents*)
   "Create a new interval table.
 LESS must be a binary predicate that defines a strict total ordering on the set of interval bounds.
 BOUNDS must be one of :CLOSED, :OPEN, :CLOSED-OPEN, :OPEN-CLOSED. It defaults to :CLOSED.
@@ -149,7 +146,6 @@ INITIAL-CONTENTS* is a list of (lo hi . value) dotted lists that become the init
     (%make-interval-table
      :less less
      :bounds bounds
-     :read-only read-only
      :tree (reduce #'(lambda (tree e)
 		       (destructuring-bind (lo hi value) e
 			 (insert less tree lo hi value)))
