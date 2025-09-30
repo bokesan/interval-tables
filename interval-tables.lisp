@@ -96,6 +96,7 @@
 (declaim (ftype (function (interval-table) (unsigned-byte 50)) interval-table-count))
 
 (defun interval-table-count (table)
+  (declare (optimize speed))
   (labels ((sum (n node)
 	     (declare (type (unsigned-byte 50) n))
 	     (if (null node)
@@ -103,6 +104,17 @@
 		 (sum (sum (+ n 1) (node-left node)) (node-right node)))))
     (sum 0 (interval-table-tree table))))
 
+(declaim (ftype (function (interval-table) (unsigned-byte 50)) depth))
+(defun depth (table)
+  (declare (optimize speed))
+  (labels ((walk (node)
+	     (if (null node)
+		 0
+		 (+ 1 (max (walk (node-left node))
+			   (walk (node-right node)))))))
+    (walk (interval-table-tree table))))
+
+	     
 (declaim (ftype (function (interval-table) boolean) interval-table-empty-p))
 
 (defun interval-table-empty-p (table)
@@ -197,22 +209,49 @@
       (:closed-open (and (%le lo point) (%lt point hi)))
       (:open-closed (and (%lt lo point) (%le point hi))))))
   
-(defun %map-to-list (function table)
+(defun %map-to-list (function table from-end)
+  (declare (type function function)
+	   (type interval-table table))
   (labels ((collect (e xs)
+	     (declare (type (or null node) e)
+		      (type list xs))
              (if (null e)
                  xs
-                 (collect (node-left e)
-                          (cons (funcall function (node-lo e) (node-hi e) (node-value e))
-                                (collect (node-right e) xs))))))
-    (collect (interval-table-tree table) nil)))
+                 (collect
+		  (node-left e)
+                  (cons (funcall function (node-lo e) (node-hi e) (node-value e))
+                        (collect (node-right e) xs)))))
+	   (collect-from-end (e xs)
+	     (declare (type (or null node) e)
+		      (type list xs))
+             (if (null e)
+                 xs
+                 (collect-from-end
+		  (node-right e)
+                  (cons (funcall function (node-lo e) (node-hi e) (node-value e))
+                        (collect-from-end (node-left e) xs))))))
+    (if from-end
+	(collect-from-end (interval-table-tree table) nil)
+	(collect (interval-table-tree table) nil))))
 
-(defun %for-each (function table)
+(defun %for-each (function table from-end)
+  (declare (type function function)
+	   (type interval-table table))
   (labels ((walk (e)
+	     (declare (type (or null node) e))
              (when e
                (walk (node-left e))
                (funcall function (node-lo e) (node-hi e) (node-value e))
-               (walk (node-right e)))))
-    (walk (interval-table-tree table))))
+               (walk (node-right e))))
+	   (walk-from-end (e)
+	     (declare (type (or null node) e))
+             (when e
+               (walk-from-end (node-right e))
+               (funcall function (node-lo e) (node-hi e) (node-value e))
+               (walk-from-end (node-left e)))))
+    (if from-end
+	(walk-from-end (interval-table-tree table))
+	(walk (interval-table-tree table)))))
 
 (defmacro do-intervals (((lo hi) value table) &body body)
   (let ((proc (gensym))
@@ -220,14 +259,15 @@
         (tab (gensym)))
     `(let ((,tab ,table))
        (labels ((,proc (,e)
-                (when ,e
-                  (,proc (node-left ,e))
-                  (let ((,lo (node-lo ,e))
-                        (,hi (node-hi ,e))
-                        (,value (node-value ,e)))
-                    (declare (ignorable ,lo ,hi ,value))
-                    ,@body)
-                  (,proc (node-right ,e)))))
+		  (declare (type (or null node) ,e))
+                  (when ,e
+                    (,proc (node-left ,e))
+                    (let ((,lo (node-lo ,e))
+                          (,hi (node-hi ,e))
+                          (,value (node-value ,e)))
+                      (declare (ignorable ,lo ,hi ,value))
+                      ,@body)
+                    (,proc (node-right ,e)))))
        (,proc (interval-table-tree ,tab))))))
 
 (declaim (ftype (function (t function interval-table
@@ -241,8 +281,8 @@
 		map-intervals))
 
 (defun map-intervals (result-type function table &key containing intersecting above below from-end)
-  (cond ((null result-type) (%for-each function table))
-        ((eq result-type 'list) (%map-to-list function table))
+  (cond ((null result-type) (%for-each function table from-end))
+        ((eq result-type 'list) (%map-to-list function table from-end))
         ;; TODO: string vector, length check
 	;; string (string 4711) (string *) vector (vector type [size]) (array type (size))
         (t (error "invalid result-type ~S" result-type))))

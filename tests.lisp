@@ -27,6 +27,10 @@
 	(integer 0 3)
 	(list (tuple (integer) (integer 0 *) (string))))))
 
+(defun third-arg (a b c)
+  (declare (ignore a b))
+  c)
+
 (defvar *table* )
 
 (test basics
@@ -61,9 +65,8 @@
 	(multiple-value-bind (value present-p) (get-interval 1 4 table "Nope")
 	  (is (string= "Nope" value))
 	  (is-false present-p))
-	(is (equal '("E4" "E1" "E5" "E2") (map-intervals 'list
-							 #'(lambda (a b c) (declare (ignore a b)) c)
-							 table)))
+	(is (equal '("E4" "E1" "E5" "E2") (map-intervals 'list #'third-arg table)))
+	(is (equal '("E2" "E5" "E1" "E4") (map-intervals 'list #'third-arg table :from-end t)))
 	))
 
 
@@ -84,3 +87,14 @@
 		(and (string= (get-interval lo hi table) value)
 		     (= (interval-table-count table)
 			(if old-value old-count (+ old-count 1)))))))))))
+
+(test depth
+      (let ((*num-trials* 1000))
+	(is-true
+	 (check-it
+	  (generator (gen-interval-table))
+	  (lambda (table)
+	    (declare (type interval-table table))
+	    ;; TODO: adjust once we use a balance binary tree
+	    (<= (interval-tables::depth table)
+		(interval-table-count table)))))))
