@@ -3,6 +3,7 @@
   :version "0.1"
   :author "Christoph Breitkopf <chbreitkopf@gmail.com>"
   :licence "MIT"
+  :depends-on ("alexandria")
   :components ((:file "interval-tables")))
 
 (defsystem "interval-tables/tests"

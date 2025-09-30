@@ -1,9 +1,10 @@
 (defpackage :interval-tables
   (:use :cl)
+  (:import-from :alexandria :array-length)
   (:export :interval-table :make-interval-table :interval-table-p
 	   :interval-table-count :interval-table-empty-p
 	   :get-interval :rem-interval
-	   :do-intervals :map-intervals))
+	   :do-intervals :map-intervals :subtable :map-values))
 
 (in-package :interval-tables)
 
@@ -93,18 +94,19 @@
 
 #+SBCL (declaim (sb-ext:freeze-type interval-table))
 
-(declaim (ftype (function (interval-table) (unsigned-byte 50)) interval-table-count))
+(declaim (ftype (function (interval-table) array-length) interval-table-count))
 
 (defun interval-table-count (table)
+  "The number of entries in the table. O(n)."
   (declare (optimize speed))
   (labels ((sum (n node)
-	     (declare (type (unsigned-byte 50) n))
+	     (declare (type array-length n))
 	     (if (null node)
 		 n
 		 (sum (sum (+ n 1) (node-left node)) (node-right node)))))
     (sum 0 (interval-table-tree table))))
 
-(declaim (ftype (function (interval-table) (unsigned-byte 50)) depth))
+(declaim (ftype (function (interval-table) array-length) depth))
 (defun depth (table)
   (declare (optimize speed))
   (labels ((walk (node)
@@ -112,12 +114,14 @@
 		 0
 		 (+ 1 (max (walk (node-left node))
 			   (walk (node-right node)))))))
+    (declare (ftype (function ((or null node)) array-length) walk))
     (walk (interval-table-tree table))))
 
 	     
 (declaim (ftype (function (interval-table) boolean) interval-table-empty-p))
 
 (defun interval-table-empty-p (table)
+  "Is the table empty? O(1)."
   (null (interval-table-tree table)))
 
 
@@ -136,6 +140,11 @@
 				   initial-contents
 				   initial-contents*
 				   read-only)
+  "Create a new interval table.
+LESS must be a binary predicate that defines a strict total ordering on the set of interval bounds.
+BOUNDS must be one of :CLOSED, :OPEN, :CLOSED-OPEN, :OPEN-CLOSED. It defaults to :CLOSED.
+INITIAL-CONTENTS is a list of (lo hi value) lists that become the initial elements of the table.
+INITIAL-CONTENTS* is a list of (lo hi . value) dotted lists that become the initial elements of the table."
   (let ((less (if (symbolp less) (symbol-function less) less)))
     (%make-interval-table
      :less less
@@ -156,6 +165,9 @@
 (declaim (ftype (function (t t interval-table &optional t) (values t boolean)) get-interval))
 
 (defun get-interval (lo hi table &optional default)
+  "Look up the interval with bounds lo,hi in table.
+If the table contains the interval, returns its value and t.
+If not, returns default and nil."
   (let ((%less (interval-table-less table)))
     (labels ((walk (node)
 	       (if (null node)
@@ -175,6 +187,7 @@
 
 (declaim (ftype (function (t t interval-table t) t) interval-table-put))
 (defun interval-table-put (lo hi table value)
+  "Associate the interval lo,hi with value in the table. Returns value."
   (when (empty-interval-p lo hi table)
     (error "empty interval ~S ~S ~S" lo hi (interval-table-bounds table)))
   (setf (interval-table-tree table)
@@ -186,6 +199,12 @@
 (defsetf get-interval (lo hi table &optional default) (new-value)
   (declare (ignore default))
   `(interval-table-put ,lo ,hi ,table ,new-value))
+
+(declaim (ftype (function (t t interval-table) boolean) rem-interval))
+(defun rem-interval (lo hi table)
+  "Remove the entry for interval lo,hi in table, if any.
+Returns true if there was such an entry, or false otherwise."
+  TODO)
 
 (defun before-node-p (tab node point)
   (let ((%less (interval-table-less tab)))
@@ -208,7 +227,24 @@
       (:open (and (%lt lo point) (%lt point hi)))
       (:closed-open (and (%le lo point) (%lt point hi)))
       (:open-closed (and (%lt lo point) (%le point hi))))))
-  
+
+
+(declaim (ftype (function (interval-table function) null) map-values))
+(defun map-values (table function)
+  "Update all values in table by the result of calling function with the lower bound, upper bound, and value."
+  (labels ((walk (node)
+	     (declare (type (or null node) node))
+	     (when node
+	       (setf (node-value node) (funcall function (node-lo node) (node-hi node) (node-value node)))
+	       (walk (node-left node))
+	       (walk (node-right node)))))
+    (walk (interval-table-tree table))))
+
+
+(defun subtable (table &key containing not-containing intersecting not-intersecting above below)
+  (declare (type interval-table table))
+  TODO)
+
 (defun %map-to-list (function table from-end)
   (declare (type function function)
 	   (type interval-table table))
@@ -254,6 +290,7 @@
 	(walk (interval-table-tree table)))))
 
 (defmacro do-intervals (((lo hi) value table) &body body)
+  "Iterate over the entries in table."
   (let ((proc (gensym))
         (e (gensym))
         (tab (gensym)))
