@@ -32,7 +32,7 @@ Getting the size and checking if a table is empty:
 Look up intervals:
 
 ```lisp
-(get-interval 5 15 *table*) => "E3", t
+(get-interval 5 15 *table*) => "E5", t
 (get-interval 1 4 *table*) => nil, nil
 (get-interval 1 4 *table* "Nope") => "Nope", nil
 ```
