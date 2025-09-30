@@ -62,7 +62,9 @@ You can use `:from-end t` to use descending order instead.
 If you do not use `:containing` or `:intersecting`, all intervals in the table will be processed:
 
 ```lisp
-(map-intervals 'list #'(lambda (a b c) c) *table*) => ("E4" "E1" "E5" "E2")
+(defun arg3 (a b c) (declare (ignore a b)) c)
+(map-intervals 'list #'arg3 *table*) => ("E4" "E1" "E5" "E2")
+(map-intervals 'list #'arg3 *table* :from-end t) => ("E2" "E5" "E1" "E4")
 ```
 
 ## FAQ
