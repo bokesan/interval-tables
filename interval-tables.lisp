@@ -1,7 +1,7 @@
 (defpackage :interval-tables
   (:use :cl)
   (:export :interval-table :make-interval-table :interval-table-p
-	   :interval-table-count
+	   :interval-table-count :interval-table-empty-p
 	   :get-interval :rem-interval
 	   :do-intervals :map-intervals))
 
@@ -52,31 +52,32 @@
 	((%gt a b)  1)
 	(t          0)))
 
-(defun compare-entries (less a b)
-  (declare (optimize speed))
+(defun compare-nodes (less a b)
   (let ((r (compare less (node-lo a) (node-lo b))))
     (if (/= r 0)
 	r
 	(compare less (node-hi a) (node-hi b)))))
 
 (defun compare-interval-to-node (less lo hi node)
-  (declare (optimize speed))
   (let ((r (compare less lo (node-lo node))))
     (if (/= r 0)
 	r
 	(compare less hi (node-hi node)))))
 
-(defun insert (less tree lo hi value)
+(defun insert (%less tree lo hi value)
+  (declare
+   (type function %less)
+   (type (or null node) tree)
+   (optimize speed))
   (labels ((ins (e)
-	     (declare (optimize speed))
 	     (if (null e)
 		 (make-node :lo lo :hi hi :value value
 			       :max-upper hi)
-		 (let ((r (compare-interval-to-node less lo hi e)))
+		 (let ((r (compare-interval-to-node %less lo hi e)))
 		   (cond ((< r 0) (setf (node-left e) (ins (node-left e))))
 			 ((> r 0) (setf (node-right e) (ins (node-right e))))
 			 (t (setf (node-value e) value)))
-                  (setf (node-max-upper e) (max (node-max-upper e) hi))
+                  (setf (node-max-upper e) (%max (node-max-upper e) hi))
                   e))))
     (ins tree)))
 
@@ -92,6 +93,8 @@
 
 #+SBCL (declaim (sb-ext:freeze-type interval-table))
 
+(declaim (ftype (function (interval-table) (unsigned-byte 50)) interval-table-count))
+
 (defun interval-table-count (table)
   (labels ((sum (n node)
 	     (declare (type (unsigned-byte 50) n))
@@ -99,6 +102,12 @@
 		 n
 		 (sum (sum (+ n 1) (node-left node)) (node-right node)))))
     (sum 0 (interval-table-tree table))))
+
+(declaim (ftype (function (interval-table) boolean) interval-table-empty-p))
+
+(defun interval-table-empty-p (table)
+  (null (interval-table-tree table)))
+
 
 (declaim
  (ftype (function ((or symbol (function (t t) boolean))
@@ -115,23 +124,26 @@
 				   initial-contents
 				   initial-contents*
 				   read-only)
-  (%make-interval-table
-   :less less
-   :bounds bounds
-   :read-only read-only
-   :tree (reduce #'(lambda (tree e)
-		     (destructuring-bind (lo hi value) e
-		       (insert less tree lo hi value)))
-		 initial-contents
-		 :initial-value
-		 (reduce #'(lambda (tree e)
-			     (destructuring-bind (lo hi &rest value) e
-			       (insert less tree lo hi value)))
-			 initial-contents*
-			 :initial-value nil))))
+  (let ((less (if (symbolp less) (symbol-function less) less)))
+    (%make-interval-table
+     :less less
+     :bounds bounds
+     :read-only read-only
+     :tree (reduce #'(lambda (tree e)
+		       (destructuring-bind (lo hi value) e
+			 (insert less tree lo hi value)))
+		   initial-contents
+		   :initial-value
+		   (reduce #'(lambda (tree e)
+			       (destructuring-bind (lo hi &rest value) e
+				 (insert less tree lo hi value)))
+			   initial-contents*
+			   :initial-value nil)))))
 
 
-(defun get-interval (table lo hi &optional default)
+(declaim (ftype (function (t t interval-table &optional t) (values t boolean)) get-interval))
+
+(defun get-interval (lo hi table &optional default)
   (let ((%less (interval-table-less table)))
     (labels ((walk (node)
 	       (if (null node)
@@ -142,14 +154,16 @@
 			   (t (values (node-value node) t)))))))
       (walk (interval-table-tree table)))))
 
-(defun empty-interval-p (table lo hi)
+(declaim (ftype (function (t t interval-table) boolean) empty-interval-p))
+(defun empty-interval-p (lo hi table)
   (let ((%less (interval-table-less table)))
     (if (eq (interval-table-bounds table) :closed)
 	(%lt hi lo)
 	(%le hi lo))))
 
-(defun interval-table-put (table lo hi value)
-  (when (empty-interval-p table lo hi)
+(declaim (ftype (function (t t interval-table t) t) interval-table-put))
+(defun interval-table-put (lo hi table value)
+  (when (empty-interval-p lo hi table)
     (error "empty interval ~S ~S ~S" lo hi (interval-table-bounds table)))
   (setf (interval-table-tree table)
 	(insert (interval-table-less table)
@@ -157,8 +171,9 @@
 		lo hi value))
   value)
 
-(defsetf get-interval (table lo hi &optional default) (new-value)
-  `(interval-table-put ,table ,lo ,hi ,new-value))
+(defsetf get-interval (lo hi table &optional default) (new-value)
+  (declare (ignore default))
+  `(interval-table-put ,lo ,hi ,table ,new-value))
 
 (defun before-node-p (tab node point)
   (let ((%less (interval-table-less tab)))
@@ -215,9 +230,17 @@
                   (,proc (node-right ,e)))))
        (,proc (interval-table-tree ,tab))))))
 
-(declaim (ftype (function (t function interval-table) t) map-intervals))
+(declaim (ftype (function (t function interval-table
+			     &key
+			     (:above t)
+			     (:below t)
+			     (:containing t)
+			     (:from-end t)
+			     (:intersecting (or null (cons * (cons * null)))))
+			  (or list vector))
+		map-intervals))
 
-(defun map-intervals (result-type function table &key containing intersecting above below)
+(defun map-intervals (result-type function table &key containing intersecting above below from-end)
   (cond ((null result-type) (%for-each function table))
         ((eq result-type 'list) (%map-to-list function table))
         ;; TODO: string vector, length check

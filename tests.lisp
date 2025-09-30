@@ -2,7 +2,7 @@
 
 (defpackage :tests
   (:use :cl :check-it :interval-tables)
-  (:import-from :fiveam :test :is))
+  (:import-from :fiveam :test :is :is-true :is-false))
 
 (in-package :tests)
 
@@ -27,26 +27,60 @@
 	(integer 0 3)
 	(list (tuple (integer) (integer 0 *) (string))))))
 
-(defvar *table* (make-interval-table #'<
-                                     :initial-contents
-				     '((1 2 a) (6 9 b)
-                                       (4 7 c) (2 6 d))))
+(defvar *table* )
+
 (test basics
-      (is (= 4 (interval-table-count *table*)))
-      (is (eq 'a (interval-table-ref *table* 1 2)))
-      (is (eq 'c (interval-table-ref *table* 4 7)))
-      (is (null (interval-table-ref *table* 4 6))))
+      (let ((table (make-interval-table
+		    '< ; symbol instead of function
+		    :initial-contents
+		    '((1 2 a) (6 9 b) (4 7 c) (2 6 d)))))
+	(is (= 4 (interval-table-count table)))
+	(is (eq 'a (get-interval 1 2 table)))
+	(is (eq 'c (get-interval 4 7 table)))
+	(is (null (get-interval 4 6 table)))
+	(is (string= "foo" (get-interval 4 6 table "foo")))))
+
+(test readme
+      ;; The examples in the README should better work
+      (let ((table (make-interval-table #'<)))
+	(is (= 0 (interval-table-count table)))
+	(is-true (interval-table-empty-p table))
+	(setf (get-interval 1 10 table) "E1")
+	(setf (get-interval 11 20 table) "E2")
+	(setf (get-interval 5 15 table) "E3")
+	(setf (get-interval 0 2 table) "E4")
+	(setf (get-interval 5 15 table) "E5")
+	(is (= 4 (interval-table-count table)))
+	(is-false (interval-table-empty-p table))
+	(multiple-value-bind (value present-p) (get-interval 5 15 table)
+	  (is (string= "E5" value))
+	  (is-true present-p))
+	(multiple-value-bind (value present-p) (get-interval 1 4 table)
+	  (is (null value))
+	  (is-false present-p))
+	(multiple-value-bind (value present-p) (get-interval 1 4 table "Nope")
+	  (is (string= "Nope" value))
+	  (is-false present-p))
+	(is (equal '("E4" "E1" "E5" "E2") (map-intervals 'list
+							 #'(lambda (a b c) (declare (ignore a b)) c)
+							 table)))
+	))
+
 
 (test prop-set-get
       (let ((*num-trials* 1000))
-	(is (check-it
-	     (generator (tuple (gen-interval-table) (integer) (integer 1 *) (string)))
-	     (lambda (x)
-	       (destructuring-bind (table lo size value) x
-		 (let* ((old-count (interval-table-count table))
-			(hi (+ lo size))
-			(old-value (get-interval table lo hi)))
-		   (setf (get-interval table lo hi) value)
-		   (and (string= (get-interval table lo hi) value)
-			(= (interval-table-count table)
-			   (if old-value old-count (+ old-count 1)))))))))))
+	(is-true
+	 (check-it
+	  (generator (tuple (gen-interval-table) (integer) (integer 1 *) (string)))
+	  (lambda (x)
+	    (destructuring-bind (table lo size value) x
+	      (declare (type interval-table table)
+		       (type integer lo size)
+		       (type string value))
+	      (let* ((old-count (interval-table-count table))
+		     (hi (+ lo size))
+		     (old-value (get-interval lo hi table)))
+		(setf (get-interval lo hi table) value)
+		(and (string= (get-interval lo hi table) value)
+		     (= (interval-table-count table)
+			(if old-value old-count (+ old-count 1)))))))))))
