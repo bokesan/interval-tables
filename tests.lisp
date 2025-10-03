@@ -88,6 +88,12 @@
 		     (= (interval-table-count table)
 			(if old-value old-count (+ old-count 1)))))))))))
 
+(defun max-depth (n)
+  (declare (type array-length n))
+  (if (= n 0)
+      0
+      (1+ (* 1.4 (log n 2)))))
+
 (test depth
       (let ((*num-trials* 1000))
 	(is-true
@@ -95,6 +101,5 @@
 	  (generator (gen-interval-table))
 	  (lambda (table)
 	    (declare (type interval-table table))
-	    ;; TODO: adjust once we use a balance binary tree
-	    (<= (interval-tables::depth table)
-		(interval-table-count table)))))))
+	    (<= (interval-tables::height table)
+		(max-depth (interval-table-count table))))))))

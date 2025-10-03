@@ -11,13 +11,16 @@
 (deftype interval-bounds () '(member :open :closed :closed-open :open-closed))
 
 (declaim (inline make-node node-lo node-hi node-max-upper
-		 node-value node-left node-right))
+		 node-value node-left node-right
+		 node-red-p))
 
 (defstruct node
-  lo hi ; TODO: should these be read-only?
+  (lo nil :read-only t)
+  (hi nil :read-only t)
   max-upper
-  (left nil :type (or null node))
+  (left  nil :type (or null node))
   (right nil :type (or null node))
+  (red-p t)
   value)
 
 #+SBCL (declaim (sb-ext:freeze-type node))
@@ -28,10 +31,8 @@
 (defmacro %ge (a b) `(not (funcall %less ,a ,b)))
 
 (defmacro %max (a b)
-  (let ((x (gensym))
-	(y (gensym)))
-    `(let ((,x ,a)
-	   (,y ,b))
+  (let ((x (gensym)) (y (gensym)))
+    `(let ((,x ,a) (,y ,b))
        (if (%lt ,x ,y) ,y ,x))))
 
 (defun reset-max-upper (%less node)
@@ -65,28 +66,88 @@
 	r
 	(compare less hi (node-hi node)))))
 
+
+(declaim (inline red-p flip-color))
+  
+(defun red-p (node)
+  "Is node non-null and red?"
+  (and node (node-red-p node)))
+
+(defun flip-color (h)
+  "Flip the color of a single node."
+  (setf (node-red-p h) (not (node-red-p h))))
+
+(defun color-flip (h)
+  "Flip colors of a node and its direct children."
+  (declare (type node h))
+  (flip-color h)
+  (flip-color (node-left h))
+  (flip-color (node-right h)))
+
+(defun rotate-left (%less h)
+  (declare (type node h))
+  (let ((x (node-right h)))
+    (declare (type node x))
+    (setf (node-right h) (node-left x))
+    (setf (node-left x) h)
+    (setf (node-red-p x) (node-red-p h))
+    (setf (node-red-p h) t)
+    (reset-max-upper %less h)
+    (reset-max-upper %less x)
+    x))
+
+(defun rotate-right (%less h)
+  (declare (type node h))
+  (let ((x (node-left h)))
+    (declare (type node x))
+    (setf (node-left h) (node-right x))
+    (setf (node-right x) h)
+    (setf (node-red-p x) (node-red-p h))
+    (setf (node-red-p h) t)
+    (reset-max-upper %less h)
+    (reset-max-upper %less x)
+    x))
+
+(defun preserve-rb (%less h)
+  "Preserve RB-tree property after inserting a new node as left or right child of h."
+  (declare (type node h))
+  (when (and (red-p (node-right h)) (not (red-p (node-left h))))
+    (setq h (rotate-left %less h)))
+  (when (and (red-p (node-left h)) (red-p (node-left (node-left h))))
+    (setq h (rotate-right %less h)))
+  (when (and (red-p (node-left h)) (red-p (node-right h)))
+    (color-flip h))
+  h)
+
+(declaim (ftype (function (function (or null node) t t t) node) insert))
+
 (defun insert (%less tree lo hi value)
-  (declare
-   (type function %less)
-   (type (or null node) tree)
-   (optimize speed))
+  (declare (type function %less)
+	   (type (or null node) tree)
+	   (optimize speed))
   (labels ((ins (e)
 	     (if (null e)
-		 (make-node :lo lo :hi hi :value value
-			       :max-upper hi)
+		 (make-node :lo lo :hi hi :max-upper hi :value value)
 		 (let ((r (compare-interval-to-node %less lo hi e)))
-		   (cond ((< r 0) (setf (node-left e) (ins (node-left e))))
-			 ((> r 0) (setf (node-right e) (ins (node-right e))))
-			 (t (setf (node-value e) value)))
-                  (setf (node-max-upper e) (%max (node-max-upper e) hi))
-                  e))))
+		   (cond ((< r 0)
+			  (setf (node-left e) (ins (node-left e)))
+			  (setf (node-max-upper e) (%max (node-max-upper e) hi))
+			  (preserve-rb %less e))
+			 ((> r 0)
+			  (setf (node-right e) (ins (node-right e)))
+			  (setf (node-max-upper e) (%max (node-max-upper e) hi))
+			  (preserve-rb %less e))
+			 (t
+			  (setf (node-value e) value)
+			  e))))))
     (ins tree)))
 
 
 (declaim (inline %make-interval-table interval-table-less interval-table-bounds
 		 interval-table-tree))
 
-(defstruct (interval-table (:constructor %make-interval-table))
+(defstruct (interval-table (:constructor %make-interval-table)
+			   (:print-object print-ivt))
   (less nil :type (function (t t) boolean) :read-only t)
   (bounds :closed :type interval-bounds :read-only t)
   (tree nil :type (or null node)))
@@ -105,8 +166,8 @@
 		 (sum (sum (+ n 1) (node-left node)) (node-right node)))))
     (sum 0 (interval-table-tree table))))
 
-(declaim (ftype (function (interval-table) array-length) depth))
-(defun depth (table)
+(declaim (ftype (function (interval-table) array-length) height))
+(defun height (table)
   (declare (optimize speed))
   (labels ((walk (node)
 	     (if (null node)
@@ -115,6 +176,13 @@
 			   (walk (node-right node)))))))
     (declare (ftype (function ((or null node)) array-length) walk))
     (walk (interval-table-tree table))))
+
+(defun print-ivt (tab s)
+  (format s "#S(INTERVAL-TABLE :LESS ~S :BOUNDS ~S :COUNT ~S :HEIGHT ~S)"
+	  (interval-table-less tab)
+	  (interval-table-bounds tab)
+	  (interval-table-count tab)
+	  (height tab)))
 
 	     
 (declaim (ftype (function (interval-table) boolean) interval-table-empty-p))
