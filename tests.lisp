@@ -2,6 +2,7 @@
 
 (defpackage :tests
   (:use :cl :check-it :interval-tables)
+  (:import-from :alexandria :array-length)
   (:import-from :fiveam :test :is :is-true :is-false))
 
 (in-package :tests)
@@ -42,7 +43,9 @@
 	(is (eq 'a (get-interval 1 2 table)))
 	(is (eq 'c (get-interval 4 7 table)))
 	(is (null (get-interval 4 6 table)))
-	(is (string= "foo" (get-interval 4 6 table "foo")))))
+	(is (string= "foo" (get-interval 4 6 table "foo")))
+	(is-false (delete-min (make-interval-table #'<)))
+	))
 
 (test readme
       ;; The examples in the README should better work
@@ -67,6 +70,12 @@
 	  (is-false present-p))
 	(is (equal '("E4" "E1" "E5" "E2") (map-intervals 'list #'third-arg table)))
 	(is (equal '("E2" "E5" "E1" "E4") (map-intervals 'list #'third-arg table :from-end t)))
+	(multiple-value-bind (lo hi value)
+	    (delete-min table)
+	  (is (= 0 lo))
+	  (is (= 2 hi))
+	  (is (string= "E4" value))
+	  (is (equal '("E1" "E5" "E2") (map-intervals 'list #'third-arg table))))
 	))
 
 
@@ -88,13 +97,41 @@
 		     (= (interval-table-count table)
 			(if old-value old-count (+ old-count 1)))))))))))
 
+(defun interval< (a b c d)
+  (declaim (type integer a b c d))
+  (or (< a c)
+      (and (= a c)
+	   (< b d))))
+
+(test prop-delete-min
+      (let ((*num-trials* 1000))
+	(is-true
+	 (check-it
+	  (generator (gen-interval-table))
+	  (lambda (table)
+	    (declare (type interval-table table))
+	    (let ((old-count (interval-table-count table)))
+	      (multiple-value-bind (lo hi value)
+		  (delete-min table)
+		(if (zerop old-count)
+		    (not (or lo hi value))
+		    (and (= (interval-table-count table) (- old-count 1))
+			 (every #'identity
+				(map-intervals
+				 'list
+				 #'(lambda (a b c)
+				     (declare (ignore c))
+				     (interval< lo hi a b))
+				 table)))))))))))
+
+	    
 (defun max-depth (n)
   (declare (type array-length n))
   (if (= n 0)
       0
       (1+ (* 1.4 (log n 2)))))
 
-(test depth
+(test prop-depth
       (let ((*num-trials* 1000))
 	(is-true
 	 (check-it

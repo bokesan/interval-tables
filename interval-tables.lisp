@@ -3,7 +3,8 @@
   (:import-from :alexandria :array-length)
   (:export :interval-table :make-interval-table :interval-table-p
 	   :interval-table-count :interval-table-empty-p
-	   :get-interval :rem-interval
+	   :get-interval
+	   :delete-interval :delete-min
 	   :do-intervals :map-intervals :subtable :map-values))
 
 (in-package :interval-tables)
@@ -108,7 +109,7 @@
     (reset-max-upper %less x)
     x))
 
-(defun preserve-rb (%less h)
+(defun fix-up (%less h)
   "Preserve RB-tree property after inserting a new node as left or right child of h."
   (declare (type node h))
   (when (and (red-p (node-right h)) (not (red-p (node-left h))))
@@ -116,6 +117,23 @@
   (when (and (red-p (node-left h)) (red-p (node-left (node-left h))))
     (setq h (rotate-right %less h)))
   (when (and (red-p (node-left h)) (red-p (node-right h)))
+    (color-flip h))
+  h)
+
+(defun move-red-left (%less h)
+  (declare (type node h))
+  (color-flip h)
+  (when (red-p (node-left (node-right h)))
+    (setf (node-right h) (rotate-right %less (node-right h)))
+    (setq h (rotate-left %less h))
+    (color-flip h))
+  h)
+
+(defun move-red-right (%less h)
+  (declare (type node h))
+  (color-flip h)
+  (when (red-p (node-left (node-left h)))
+    (setq h (rotate-right %less h))
     (color-flip h))
   h)
 
@@ -132,15 +150,16 @@
 		   (cond ((< r 0)
 			  (setf (node-left e) (ins (node-left e)))
 			  (setf (node-max-upper e) (%max (node-max-upper e) hi))
-			  (preserve-rb %less e))
+			  (fix-up %less e))
 			 ((> r 0)
 			  (setf (node-right e) (ins (node-right e)))
 			  (setf (node-max-upper e) (%max (node-max-upper e) hi))
-			  (preserve-rb %less e))
+			  (fix-up %less e))
 			 (t
 			  (setf (node-value e) value)
 			  e))))))
     (ins tree)))
+
 
 
 (declaim (inline %make-interval-table interval-table-less interval-table-bounds
@@ -264,8 +283,35 @@ If not, returns default and nil."
   (declare (ignore default))
   `(interval-table-put ,lo ,hi ,table ,new-value))
 
-(declaim (ftype (function (t t interval-table) boolean) rem-interval))
-(defun rem-interval (lo hi table)
+
+(declaim (ftype (function (interval-table) (values t t t)) delete-min))
+(defun delete-min (table)
+  (let ((%less (interval-table-less table)))
+    (labels ((del (h)
+	       (declare (type node h))
+	       (if (null (node-left h))
+		   (values nil h)
+		   (progn
+		     (when (and (not (red-p (node-left h))) (not (red-p (node-left (node-left h)))))
+		       (setq h (move-red-left %less h)))
+		     (multiple-value-bind (tree min)
+			 (del (node-left h))
+		       (setf (node-left h) tree)
+		       (reset-max-upper %less h)
+		       (values (fix-up %less h) min))))))
+      (if (null (interval-table-tree table))
+	  (values nil nil nil)
+	  (multiple-value-bind (tree min)
+	      (del (interval-table-tree table))
+	    (when tree
+	      (setf (node-red-p tree) nil))
+	    (setf (interval-table-tree table) tree)
+	    (values (node-lo min) (node-hi min) (node-value min)))))))
+
+
+
+(declaim (ftype (function (t t interval-table) boolean) delete-interval))
+(defun delete-interval (lo hi table)
   "Remove the entry for interval lo,hi in table, if any.
 Returns true if there was such an entry, or false otherwise."
   TODO)
