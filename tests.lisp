@@ -95,6 +95,11 @@
 	(is (string= "4-6: 100" (get-interval 4 6 table)))
 	(is (string= "2-3: 10" (get-interval 2 3 table)))))
 
+(test map-to-string
+      (let ((table (make-interval-table #'< :initial-contents '((4 6 #\A) (2 3 #\C)))))
+	(is (string= "CA" (map-intervals 'string #'third-arg table)))
+	(is (string= "AC" (map-intervals 'string #'third-arg table :from-end t)))))
+
 (test every-some
       (let ((table (make-interval-table
 		    #'<

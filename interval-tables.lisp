@@ -510,6 +510,48 @@ O(log n)."
 	(collect-from-end (interval-table-tree table) nil)
 	(collect (interval-table-tree table) nil))))
 
+(defun %map-to-vector (element-type function table containing from-end)
+  (let ((result (make-array 10 :element-type element-type :fill-pointer 0 :adjustable t)))
+    (labels ((add-result (e)
+	       (declare (type node e))
+	       (vector-push-extend (funcall function (node-lo e) (node-hi e) (node-value e))
+				   result
+				   (+ 1 (* 2 (length result)))))
+	     (walk (e)
+	       (declare (type (or null node) e))
+	       (cond ((null e) nil)
+		     ((and containing (above-upper-bound-p table (node-max-upper e) containing))
+		      ;; point is above the maximum upper bound: no result
+		      nil)
+		     ((and containing (before-node-p table e containing))
+		      ;; point is to the left of the node: can't be in right subtree
+		      (walk (node-left e)))
+		     (t
+                      (walk (node-left e))
+		      (when (or (not containing)
+				(node-contains-point-p table e containing))
+			(add-result e))
+		      (walk (node-right e)))))
+	     (walk-from-end (e)
+	       (declare (type (or null node) e))
+	       (cond ((null e) nil)
+		     ((and containing (above-upper-bound-p table (node-max-upper e) containing))
+		      ;; point is above the maximum upper bound: no result
+		      nil)
+		     ((and containing (before-node-p table e containing))
+		      ;; point is to the left of the node: can't be in right subtree
+		      (walk-from-end (node-left e)))
+		     (t
+                      (walk-from-end (node-right e))
+		      (when (or (not containing)
+				(node-contains-point-p table e containing))
+			(add-result e))
+		      (walk-from-end (node-left e))))))
+      (if from-end
+	  (walk-from-end (interval-table-tree table))
+	  (walk (interval-table-tree table)))
+      result)))
+
 (defun %for-each (function table from-end)
   (declare (type function function)
 	   (type interval-table table))
@@ -547,6 +589,7 @@ O(log n)."
                     (,proc (node-right ,e)))))
        (,proc (interval-table-tree ,tab))))))
 
+
 (declaim (ftype (function (t function interval-table
 			     &key
 			     (:above t)
@@ -561,7 +604,10 @@ O(log n)."
   (assert (at-most-one-of containing intersecting above below))
   (cond ((null result-type) (%for-each function table from-end))
         ((eq result-type 'list) (%map-to-list function table containing from-end))
-        ;; TODO: string vector, length check
+	((eq result-type 'string) (%map-to-vector 'character function table containing from-end))
+	((eq result-type 'vector) (%map-to-vector t          function table containing from-end))
+	((and (consp result-type) (eq (car result-type) 'vector))
+	  (%map-to-vector (if (cdr result-type) (cadr result-type) t) function table containing from-end))
 	;; string (string 4711) (string *) vector (vector type [size]) (array type (size))
         (t (error "invalid result-type ~S" result-type))))
 
