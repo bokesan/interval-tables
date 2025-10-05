@@ -7,7 +7,7 @@
 	   :get-interval
 	   :get-min :get-max :get-last
 	   :delete-interval
-	   :delete-min :delete-max :delete-last
+	   :delete-min :delete-max
 	   :do-intervals :map-intervals :subtable :map-values
 	   :every-interval :some-interval))
 
@@ -141,6 +141,9 @@
     (color-flip h))
   h)
 
+
+(declaim (ftype (function (function node) node) move-red-left move-red-right))
+
 (defun move-red-left (%less h)
   (declare (type node h))
   (color-flip h)
@@ -185,8 +188,8 @@
 (declaim (inline %make-interval-table interval-table-less interval-table-bounds
 		 interval-table-tree))
 
-(defstruct (interval-table (:constructor %make-interval-table)
-			   (:print-object print-ivt))
+(defstruct (interval-table (:constructor %make-interval-table))
+  "A sorted table of non-empty intervals to values."
   (less nil :type (function (t t) boolean) :read-only t)
   (bounds :closed :type interval-bounds :read-only t)
   (tree nil :type (or null node)))
@@ -216,7 +219,7 @@
     (declare (ftype (function ((or null node)) array-length) walk))
     (walk (interval-table-tree table))))
 
-(defun print-ivt (tab s)
+(defmethod print-object ((tab interval-table) s)
   (format s "#S(INTERVAL-TABLE :LESS ~S :BOUNDS ~S :COUNT ~S :HEIGHT ~S)"
 	  (interval-table-less tab)
 	  (interval-table-bounds tab)
@@ -268,9 +271,9 @@ INITIAL-CONTENTS* is a list of (lo hi . value) dotted lists that become the init
 (declaim (ftype (function (t t interval-table &optional t) (values t boolean)) get-interval))
 
 (defun get-interval (lo hi table &optional default)
-  "Look up the interval with bounds lo,hi in table.
-If the table contains the interval, returns its value and t.
-If not, returns default and nil.
+  "Look up the interval with bounds LO, HI in table.
+If the table contains the interval, return its value and true.
+If not, return DEFAULT and false.
 O(log n)."
   (let ((%less (interval-table-less table)))
     (labels ((walk (node)
@@ -292,7 +295,7 @@ O(log n)."
 
 (declaim (ftype (function (t t interval-table t) t) interval-table-put))
 (defun interval-table-put (lo hi table value)
-  "Associate the interval lo,hi with value in the table. Returns value."
+  "Associate the interval LO, HI with VALUE in TABLE. Returns VALUE."
   (when (empty-interval-p lo hi table)
     (error "empty interval ~S ~S ~S" lo hi (interval-table-bounds table)))
   (setf (interval-table-tree table)
@@ -309,9 +312,9 @@ O(log n)."
 (declaim (ftype (function (interval-table) (values t t t)) get-min get-max get-last))
 
 (defun get-min (table)
-  "Get the minimum interval in the table.
-Returns three values: lower bound, upper bound, value.
-If the table is empty, returns nil for all values.
+  "Get the minimum interval in TABLE.
+Return three values: lower bound, upper bound, value.
+If the table is empty, return three nil values.
 O(log n)."
   (labels ((walk (h)
 	     (declare (type node h))
@@ -326,8 +329,8 @@ O(log n)."
 
 (defun get-max (table)
   "Get the maximum interval in the table.
-Returns three values: lower bound, upper bound, value.
-If the table is empty, returns nil for all values.
+Return three values: lower bound, upper bound, value.
+If the table is empty, return three nil values.
 O(log n)."
   (labels ((walk (h)
 	     (declare (type node h))
@@ -358,9 +361,9 @@ O(log n)."
 
 (declaim (ftype (function (interval-table) (values t t t)) delete-min))
 (defun delete-min (table)
-    "Delete the minimum interval from the table.
-Returns the deleted interval as three values: lower bound, upper bound, value.
-If the table is empty, returns nil for all values.
+    "Delete the minimum interval from TABLE.
+Return the deleted interval as three values: lower bound, upper bound, value.
+If the table is empty, return three nil values.
 O(log n)."
     (if (null (interval-table-tree table))
 	(values nil nil nil)
@@ -374,7 +377,7 @@ O(log n)."
 
 (declaim (ftype (function (t t interval-table) (values t boolean)) delete-interval))
 (defun delete-interval (lo hi table)
-  "Delete the entry for interval lo,hi in table, if any.
+  "Delete the entry for interval LO, HI in TABLE, if any.
 Returns the entries value and true if there was such an entry, or nil and false otherwise.
 O(log n)."
   (let ((%less (interval-table-less table)))
@@ -444,7 +447,7 @@ O(log n)."
 
 (declaim (ftype (function (function interval-table)) map-values))
 (defun map-values (function table)
-  "Update all values in table by the result of calling function with the lower bound, upper bound, and value."
+  "Update all values in TABLE by the result of calling FUNCTION with the lower bound, upper bound, and value."
   (labels ((walk (node)
 	     (declare (type (or null node) node))
 	     (when node
@@ -453,19 +456,6 @@ O(log n)."
 	       (walk (node-right node)))))
     (walk (interval-table-tree table))
     (values)))
-
-(declaim (ftype (function (interval-table &key (:containing t) (:intersecting list) (:above t) (:below t))
-			  interval-table)
-		subtable))
-(defun subtable (table &key containing intersecting above below)
-  (make-interval-table
-   (interval-table-less table)
-   :bounds (interval-table-bounds table)
-   :initial-contents* (map-intervals 'vector #'list* table
-				     :containing containing
-				     :intersecting intersecting
-				     :above above
-				     :below below)))
 
 (defun %map-to-list (function table containing from-end)
   (declare (type function function)
@@ -601,6 +591,15 @@ O(log n)."
 		map-intervals))
 
 (defun map-intervals (result-type function table &key containing intersecting above below from-end)
+  "Map function over entries of TABLE.
+RESULT-TYPE gives the type of the result sequence, as in the standard function `map'.
+FUNCTION is called for each entry with three arguments: the lower bound, upper bound, value.
+Entries are processed in order. If FROM-END is true, they are processed in reverse order.
+The entries to include are selected by one of the following keyword arguments:
+:CONTAINING POINT - all intervals that contain POINT.
+:INTERSECTING (LO HI) - all intervals intersecting the interval LO, HI.
+:ABOVE POINT - all intervals whose lower bound is strictly greater than point.
+:BELOW POINT - all intervals whose upper bound is strictly less than point."
   (assert (at-most-one-of containing intersecting above below))
   (cond ((null result-type) (%for-each function table from-end))
         ((eq result-type 'list) (%map-to-list function table containing from-end))
@@ -612,10 +611,30 @@ O(log n)."
         (t (error "invalid result-type ~S" result-type))))
 
 
+(declaim (ftype (function (interval-table &key (:containing t) (:intersecting list) (:above t) (:below t))
+			  interval-table)
+		subtable))
+(defun subtable (table &key containing intersecting above below)
+  "Create a new interval table containing a subset of the entries in TABLE.
+The entries to include are selected by one of the following keyword arguments:
+:CONTAINING POINT - all intervals that contain POINT.
+:INTERSECTING (LO HI) - all intervals intersecting the interval LO-HI.
+:ABOVE POINT - all intervals whose lower bound is strictly greater than point.
+:BELOW POINT - all intervals whose upper bound is strictly less than point."
+  (make-interval-table
+   (interval-table-less table)
+   :bounds (interval-table-bounds table)
+   :initial-contents* (map-intervals 'vector #'list* table
+				     :containing containing
+				     :intersecting intersecting
+				     :above above
+				     :below below)))
+
+
 (declaim (ftype (function (function interval-table) boolean) every-interval))
 (defun every-interval (predicate table)
-  "Check that predicate is true for each interval in the table.
-Predicate must take three arguments: lower bound, upper bound, value."
+  "Check that PREDICATE is true for each interval in TABLE.
+PREDICATE is called for each entry with three arguments: lower bound, upper bound, value."
   (labels ((walk (e)
 	     (declare (type (or null node) e))
 	     (or (null e)
@@ -627,8 +646,9 @@ Predicate must take three arguments: lower bound, upper bound, value."
 
 (declaim (ftype (function (function interval-table &key (:from-end boolean)) t) some-interval))
 (defun some-interval (predicate table &key from-end)
-  "Return the first non-nil result from predicate applied to the elements of table.
-Predicate must take three arguments: lower bound, upper bound, value."
+  "Return the first non-nil result from PREDICATE applied to the elements of TABLE.
+PREDICATE is called for each entry with three arguments: lower bound, upper bound, value.
+If FROM-END is true, entries are processed in reverse order."
   (labels ((walk (e)
 	     (declare (type (or null node) e))
 	     (if (null e)
