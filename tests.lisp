@@ -71,6 +71,8 @@
 	(multiple-value-bind (value present-p) (get-interval 1 4 table "Nope")
 	  (is (string= "Nope" value))
 	  (is-false present-p))
+	(is (equal '((1 10 "E1") (5 15 "E5")) (map-intervals 'list #'list table :containing 9)))
+	(is (equal '((5 15 "E5") (1 10 "E1")) (map-intervals 'list #'list table :from-end t :containing 9)))
 	(is (equal '("E4" "E1" "E5" "E2") (map-intervals 'list #'third-arg table)))
 	(is (equal '("E2" "E5" "E1" "E4") (map-intervals 'list #'third-arg table :from-end t)))
 	(is (equal '(0 2 "E4") (multiple-value-list (get-min table))))
@@ -86,6 +88,12 @@
 	(is (= 10 (get-interval 3 7 table)))
 	(is (equal '(9 12 21) (multiple-value-list (get-min table))))
 	(is (equal '(1 2 3) (multiple-value-list (get-max table))))))
+
+(test map-values
+      (let ((table (make-interval-table #'< :initial-contents '((4 6 100) (2 3 10)))))
+	(map-values #'(lambda (lo hi val) (format nil "~A-~A: ~A" lo hi val)) table)
+	(is (string= "4-6: 100" (get-interval 4 6 table)))
+	(is (string= "2-3: 10" (get-interval 2 3 table)))))
 
 (test every-some
       (let ((table (make-interval-table
