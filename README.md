@@ -68,6 +68,18 @@ If you do not use `:containing` or `:intersecting`, all intervals in the table w
 (map-intervals 'list #'arg3 *table* :from-end t) => ("E2" "E5" "E1" "E4")
 ```
 
+As the table is sorted by the intervals, there are also the functions
+`get-min` and `get-max` to get the lowest / highest interval, and
+`delete-min` to delete and return the lowest interval from the table:
+
+```lisp
+(get-min *table*) => 0, 2, "E4")
+(delete-min *table*) => 0, 2, "E4"
+(get-min *table*) => 1, 10, "E1")
+```
+
+
+
 ## FAQ
 
 *Why is the package name in plural?*

@@ -73,14 +73,19 @@
 	  (is-false present-p))
 	(is (equal '("E4" "E1" "E5" "E2") (map-intervals 'list #'third-arg table)))
 	(is (equal '("E2" "E5" "E1" "E4") (map-intervals 'list #'third-arg table :from-end t)))
-	(multiple-value-bind (lo hi value)
-	    (delete-min table)
-	  (is (= 0 lo))
-	  (is (= 2 hi))
-	  (is (string= "E4" value))
-	  (is (equal '("E1" "E5" "E2") (map-intervals 'list #'third-arg table))))
-	))
+	(is (equal '(0 2 "E4") (multiple-value-list (get-min table))))
+	(is (equal '(0 2 "E4") (multiple-value-list (delete-min table))))
+	(is (equal '(1 10 "E1") (multiple-value-list (get-min table))))))
 
+(test reverse-order
+      ;; check that it works with "greater" instead of "less"
+      (let ((table (make-interval-table
+		    #'>
+		    :initial-contents '((1 2 3) (2 4 6) (3 7 10) (4 5 9) (9 12 21) (6 6 12) (1 6 7)))))
+	(is (= 12 (get-interval 6 6 table)))
+	(is (= 10 (get-interval 3 7 table)))
+	(is (equal '(9 12 21) (multiple-value-list (get-min table))))
+	(is (equal '(1 2 3) (multiple-value-list (get-max table))))))
 
 (test prop-set-get
       (is-true
