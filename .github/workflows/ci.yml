@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-13, macos-15]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install SBCL on Linux
+      if: ${{ startsWith(matrix.os, 'ubuntu') }}
+      run: sudo apt-get install sbcl
+    - name: Install SBCL on macOS
+      if: ${{ startsWith(matrix.os, 'mac') }}
+      run: brew install sbcl
+
+    - name: Download Quicklisp
+      run: curl -O https://beta.quicklisp.org/quicklisp.lisp
+    - name: Install Quicklisp
+      run: sbcl --non-interactive --load quicklisp.lisp --eval '(quicklisp-quickstart:install)' --eval '(ql-util:without-prompting (ql:add-to-init-file))'
+
+    - name: Test
+      run: |
+        sbcl --non-interactive \
+	     --eval '(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))' \
+	     --eval '(ql:quickload "interval-tables/tests")' \
+	     --eval '(quit :unix-status (if (fiveam:run-all-tests) 0 1))'
+
+  build-windows:
+    runs-on: windows-2022
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install SBCL
+      run: choco install sbcl
+
+    - name: Download Quicklisp
+      run: Invoke-WebRequest -Uri "https://beta.quicklisp.org/quicklisp.lisp" -OutFile "quicklisp.lisp"
+    - name: Install Quicklisp
+      run: sbcl --non-interactive --load quicklisp.lisp --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))"
+
+    - name: Test
+      run: |
+        sbcl --non-interactive \
+	     --eval "(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))" \
+	     --eval "(ql:quickload :interval-tables/tests)" \
+	     --eval "(quit :unix-status (if (fiveam:run-all-tests) 0 1))"
+
+  build-ccl:
+    runs-on: macos-13
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Clozure CL
+      run: brew install clozure-cl
+    - name: Download Quicklisp
+      run: curl -O https://beta.quicklisp.org/quicklisp.lisp
+    - name: Install Quicklisp
+      run: ccl64 --load quicklisp.lisp --eval '(quicklisp-quickstart:install)' --eval '(ql-util:without-prompting (ql:add-to-init-file))'
+    - name: Test
+      run: |
+        ccl64 \
+	     --eval "(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))" \
+	     --eval "(ql:quickload :interval-tables/tests)" \
+	     --eval "(quit :unix-status (if (fiveam:run-all-tests) 0 1))"
+
