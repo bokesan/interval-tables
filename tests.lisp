@@ -102,7 +102,7 @@
 		      (if old-value old-count (+ old-count 1))))))))))
 
 (defun cmp-intervals (lo1 hi1 lo2 hi2)
-  (declaim (type integer lo1 hi1 lo2 hi2))
+  (declare (type integer lo1 hi1 lo2 hi2))
   (cond ((< lo1 lo2) -1)
 	((> lo1 lo2)  1)
 	((< hi1 hi2) -1)

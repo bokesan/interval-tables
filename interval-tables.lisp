@@ -365,6 +365,7 @@ O(log n)."
     (labels ((del (h)
 	       (declare (type node h))
 	       (let ((r (compare-interval-to-node %less lo hi h)))
+		 (declare (type (integer -1 1) r))
 		 (if (< r 0)
 		     (progn
 		       (when (and (not (red-p (node-left h)))
@@ -374,13 +375,15 @@ O(log n)."
 		       (fix-up %less h))
 		     (progn
 		       (when (red-p (node-left h))
-			 (setq h (rotate-right %less h)))
+			 (setq h (rotate-right %less h))
+			 (setq r (compare-interval-to-node %less lo hi h)))
 		       (if (and (= r 0) (null (node-right h)))
 			   nil
 			   (progn
 			     (when (and (not (red-p (node-right h)))
 					(not (red-p (node-left (node-right h)))))
-			       (setq h (move-red-right %less h)))
+			       (setq h (move-red-right %less h))
+			       (setq r (compare-interval-to-node %less lo hi h)))
 			     (if (= r 0)
 				 (multiple-value-bind (tree min)
 				     (%delete-min %less (node-right h))
