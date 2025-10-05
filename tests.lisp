@@ -85,14 +85,16 @@
 (test prop-set-get
       (is-true
        (check-it
-	(generator (tuple (gen-interval-table) (integer) (integer 1 *) (string)))
+	(generator (tuple (gen-interval-table) (integer) (integer 0 *) (string)))
 	(lambda (x)
 	  (destructuring-bind (table lo size value) x
 	    (declare (type interval-table table)
 		     (type integer lo size)
 		     (type string value))
 	    (let* ((old-count (interval-table-count table))
-		   (hi (+ lo size))
+		   (hi (if (eq (interval-table-bounds table) :closed)
+			   (+ lo size)
+			   (+ lo size 1)))
 		   (old-value (get-interval lo hi table)))
 	      (setf (get-interval lo hi table) value)
 	      (and (string= (get-interval lo hi table) value)
@@ -151,10 +153,32 @@
 		  (and (= (interval-table-count table) (- old-count 1))
 		       (every-interval #'(lambda (a b c)
 					   (declare (ignore c))
-					   (interval< lo hi a b))
+					   (< (cmp-intervals lo hi a b) 0))
 				       table)))))))))
 
-	    
+(test prop-delete-interval
+      (is-true
+       (check-it
+	(generator (tuple (gen-interval-table) (integer) (integer 0 *)))
+	(lambda (x)
+	  (destructuring-bind (table lo size) x
+	    (declare (type interval-table table)
+		     (type integer lo size))
+	    (let* ((old-count (interval-table-count table))
+		   (hi (if (eq (interval-table-bounds table) :closed)
+			   (+ lo size)
+			   (+ lo size 1)))
+		   (old-value (get-interval lo hi table)))
+	      (multiple-value-bind (deleted-value present-p)
+		  (delete-interval lo hi table)
+		(if (not old-value)
+		    (and (null deleted-value)
+			 (not present-p)
+			 (= (interval-table-count table) old-count))
+		    (and (string= deleted-value old-value)
+			 present-p
+			 (= (interval-table-count table) (- old-count 1)))))))))))
+	
 (defun max-depth (n)
   (declare (type array-length n))
   (if (= n 0)

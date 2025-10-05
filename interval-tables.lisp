@@ -2,6 +2,7 @@
   (:use :cl)
   (:import-from :alexandria :array-length)
   (:export :interval-table :make-interval-table :interval-table-p
+	   :interval-table-bounds
 	   :interval-table-count :interval-table-empty-p
 	   :get-interval
 	   :get-min :get-max :get-last
@@ -19,8 +20,8 @@
 		 node-red-p))
 
 (defstruct node
-  (lo nil :read-only t)
-  (hi nil :read-only t)
+  lo
+  hi
   max-upper
   (left  nil :type (or null node))
   (right nil :type (or null node))
@@ -115,6 +116,7 @@
 (defun fix-up (%less h)
   "Preserve RB-tree property after inserting a new node as left or right child of h."
   (declare (type node h))
+  (reset-max-upper %less h)
   (when (and (red-p (node-right h)) (not (red-p (node-left h))))
     (setq h (rotate-left %less h)))
   (when (and (red-p (node-left h)) (red-p (node-left (node-left h))))
@@ -153,11 +155,9 @@
 		 (let ((r (compare-interval-to-node %less lo hi e)))
 		   (cond ((< r 0)
 			  (setf (node-left e) (ins (node-left e)))
-			  (setf (node-max-upper e) (%max (node-max-upper e) hi))
 			  (fix-up %less e))
 			 ((> r 0)
 			  (setf (node-right e) (ins (node-right e)))
-			  (setf (node-max-upper e) (%max (node-max-upper e) hi))
 			  (fix-up %less e))
 			 (t
 			  (setf (node-value e) value)
@@ -258,6 +258,7 @@ If not, returns default and nil.
 O(log n)."
   (let ((%less (interval-table-less table)))
     (labels ((walk (node)
+	       (declare (type (or null node) node))
 	       (if (null node)
 		   (values default nil)
 		   (let ((r (compare-interval-to-node %less lo hi node)))
@@ -324,41 +325,80 @@ O(log n)."
 	  (walk tree)))))
 
 
+(declaim (ftype (function (function node) (values (or null node) node)) %delete-min))
+(defun %delete-min (%less node)
+  (labels ((del (h)
+	     (declare (type node h))
+	     (if (null (node-left h))
+		 (values nil h)
+		 (progn
+		   (when (and (not (red-p (node-left h))) (not (red-p (node-left (node-left h)))))
+		     (setq h (move-red-left %less h)))
+		   (multiple-value-bind (tree min)
+		       (del (node-left h))
+		     (setf (node-left h) tree)
+		     (values (fix-up %less h) min))))))
+    (del node)))
+
 (declaim (ftype (function (interval-table) (values t t t)) delete-min))
 (defun delete-min (table)
     "Delete the minimum interval from the table.
 Returns the deleted interval as three values: lower bound, upper bound, value.
 If the table is empty, returns nil for all values.
 O(log n)."
+    (if (null (interval-table-tree table))
+	(values nil nil nil)
+	(multiple-value-bind (tree min)
+	    (%delete-min (interval-table-less table) (interval-table-tree table))
+	  (when tree
+	    (setf (node-red-p tree) nil))
+	  (setf (interval-table-tree table) tree)
+	  (values (node-lo min) (node-hi min) (node-value min)))))
+
+
+(declaim (ftype (function (t t interval-table) (values t boolean)) delete-interval))
+(defun delete-interval (lo hi table)
+  "Delete the entry for interval lo,hi in table, if any.
+Returns the entries value and true if there was such an entry, or nil and false otherwise.
+O(log n)."
   (let ((%less (interval-table-less table)))
     (labels ((del (h)
 	       (declare (type node h))
-	       (if (null (node-left h))
-		   (values nil h)
-		   (progn
-		     (when (and (not (red-p (node-left h))) (not (red-p (node-left (node-left h)))))
-		       (setq h (move-red-left %less h)))
-		     (multiple-value-bind (tree min)
-			 (del (node-left h))
-		       (setf (node-left h) tree)
-		       (reset-max-upper %less h)
-		       (values (fix-up %less h) min))))))
-      (if (null (interval-table-tree table))
-	  (values nil nil nil)
-	  (multiple-value-bind (tree min)
-	      (del (interval-table-tree table))
-	    (when tree
-	      (setf (node-red-p tree) nil))
-	    (setf (interval-table-tree table) tree)
-	    (values (node-lo min) (node-hi min) (node-value min)))))))
-
-
-
-(declaim (ftype (function (t t interval-table) boolean) delete-interval))
-(defun delete-interval (lo hi table)
-  "Delete the entry for interval lo,hi in table, if any.
-Returns true if there was such an entry, or false otherwise."
-  TODO)
+	       (let ((r (compare-interval-to-node %less lo hi h)))
+		 (if (< r 0)
+		     (progn
+		       (when (and (not (red-p (node-left h)))
+				  (not (red-p (node-left (node-left h)))))
+			 (setq h (move-red-left %less h)))
+		       (setf (node-left h) (del (node-left h)))
+		       (fix-up %less h))
+		     (progn
+		       (when (red-p (node-left h))
+			 (setq h (rotate-right %less h)))
+		       (if (and (= r 0) (null (node-right h)))
+			   nil
+			   (progn
+			     (when (and (not (red-p (node-right h)))
+					(not (red-p (node-left (node-right h)))))
+			       (setq h (move-red-right %less h)))
+			     (if (= r 0)
+				 (multiple-value-bind (tree min)
+				     (%delete-min %less (node-right h))
+				   (setf (node-lo h) (node-lo min)
+					 (node-hi h) (node-hi min)
+					 (node-value h) (node-value min))
+				   (setf (node-right h) tree)
+				   (fix-up %less h))
+				 (progn
+				   (setf (node-right h) (del (node-right h)))
+				   (fix-up %less h))))))))))
+      (multiple-value-bind (value present-p)
+	  (get-interval lo hi table)
+	(if (not present-p)
+	    (values nil nil)
+	    (progn
+	      (setf (interval-table-tree table) (del (interval-table-tree table)))
+	      (values value t)))))))
 
 (defun before-node-p (tab node point)
   (let ((%less (interval-table-less tab)))
