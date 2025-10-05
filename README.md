@@ -1,4 +1,5 @@
-# interval-tables
+# interval-tables ![Continuous Integration](https://github.com/bokesan/interval-tables/actions/workflows/ci.yml/badge.svg)
+
 Common Lisp interval tables with fast search for all intervals containing a point or intersecting an interval.
 
 **Work-in-progress, not ready for use.**
