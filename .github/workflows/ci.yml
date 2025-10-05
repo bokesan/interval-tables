@@ -32,9 +32,9 @@ jobs:
     - name: Test
       run: >
         sbcl --non-interactive
-	     --eval '(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))'
-	     --eval '(ql:quickload "interval-tables/tests")'
-	     --eval '(quit :unix-status (if (fiveam:run-all-tests) 0 1))'
+        --eval '(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))'
+        --eval '(ql:quickload "interval-tables/tests")'
+        --eval '(quit :unix-status (if (fiveam:run-all-tests) 0 1))'
 
   build-windows:
     runs-on: windows-2022
@@ -52,9 +52,9 @@ jobs:
     - name: Test
       run: >
         sbcl --non-interactive
-	     --eval "(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))"
-	     --eval "(ql:quickload :interval-tables/tests)"
-	     --eval "(quit :unix-status (if (fiveam:run-all-tests) 0 1))"
+        --eval "(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))"
+        --eval "(ql:quickload :interval-tables/tests)"
+        --eval "(quit :unix-status (if (fiveam:run-all-tests) 0 1))"
 
   build-ccl:
     runs-on: macos-13
@@ -68,7 +68,7 @@ jobs:
       run: ccl64 --load quicklisp.lisp --eval '(quicklisp-quickstart:install)' --eval '(ql-util:without-prompting (ql:add-to-init-file))'
     - name: Test
       run: >
-        ccl64 --eval "(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))"
-	      --eval "(ql:quickload :interval-tables/tests)"
-	      --eval "(quit :unix-status (if (fiveam:run-all-tests) 0 1))"
-
+        ccl64
+        --eval "(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))"
+        --eval "(ql:quickload :interval-tables/tests)"
+        --eval "(quit :unix-status (if (fiveam:run-all-tests) 0 1))"
