@@ -87,6 +87,14 @@
 	(is (equal '(9 12 21) (multiple-value-list (get-min table))))
 	(is (equal '(1 2 3) (multiple-value-list (get-max table))))))
 
+(test every-some
+      (let ((table (make-interval-table
+		    #'<
+		    :initial-contents '((1 2 3) (2 4 6) (3 7 10) (4 5 9) (9 12 21) (6 6 12) (1 6 7)))))
+	(is-true (every-interval #'(lambda (lo hi v) (= v (+ lo hi))) table))
+	(is (equal '(2 4 6)  (some-interval #'(lambda (lo hi v) (if (evenp v) (list lo hi v) nil)) table)))
+	(is (equal '(6 6 12) (some-interval #'(lambda (lo hi v) (if (evenp v) (list lo hi v) nil)) table :from-end t)))))
+
 (test prop-set-get
       (is-true
        (check-it

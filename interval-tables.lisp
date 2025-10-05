@@ -9,7 +9,7 @@
 	   :delete-interval
 	   :delete-min :delete-max :delete-last
 	   :do-intervals :map-intervals :subtable :map-values
-	   :every-interval))
+	   :every-interval :some-interval))
 
 (in-package :interval-tables)
 
@@ -89,6 +89,7 @@
   (flip-color (node-left h))
   (flip-color (node-right h)))
 
+(declaim (ftype (function (function node) node) rotate-left))
 (defun rotate-left (%less h)
   (declare (type node h))
   (let ((x (node-right h)))
@@ -101,6 +102,7 @@
     (reset-max-upper %less x)
     x))
 
+(declaim (ftype (function (function node) node) rotate-right))
 (defun rotate-right (%less h)
   (declare (type node h))
   (let ((x (node-left h)))
@@ -113,6 +115,8 @@
     (reset-max-upper %less x)
     x))
 
+
+(declaim (ftype (function (function node) node) fix-up))
 (defun fix-up (%less h)
   "Preserve RB-tree property after inserting a new node as left or right child of h."
   (declare (type node h))
@@ -539,9 +543,11 @@ O(log n)."
 		    (walk (walk xs (node-right node)) (node-left node))))))
     (walk nil (interval-table-tree table))))
 
+
+(declaim (ftype (function (function interval-table) boolean) every-interval))
 (defun every-interval (predicate table)
   "Check that predicate is true for each interval in the table.
-Predicate must take three arguments: lower bound, uppe bound, value."
+Predicate must take three arguments: lower bound, upper bound, value."
   (labels ((walk (e)
 	     (declare (type (or null node) e))
 	     (or (null e)
@@ -549,3 +555,26 @@ Predicate must take three arguments: lower bound, uppe bound, value."
 		      (walk (node-left e))
 		      (walk (node-right e))))))
     (walk (interval-table-tree table))))
+
+
+(declaim (ftype (function (function interval-table &key (:from-end boolean)) t) some-interval))
+(defun some-interval (predicate table &key from-end)
+  "Return the first non-nil result from predicate applied to the elements of table.
+Predicate must take three arguments: lower bound, upper bound, value."
+  (labels ((walk (e)
+	     (declare (type (or null node) e))
+	     (if (null e)
+		 nil
+		 (or (walk (node-left e))
+		     (funcall predicate (node-lo e) (node-hi e) (node-value e))
+		     (walk (node-right e)))))
+	   (walk-from-end (e)
+	     (declare (type (or null node) e))
+	     (if (null e)
+		 nil
+		 (or (walk-from-end (node-right e))
+		     (funcall predicate (node-lo e) (node-hi e) (node-value e))
+		     (walk-from-end (node-left e))))))
+    (if from-end
+	(walk-from-end (interval-table-tree table))
+	(walk (interval-table-tree table)))))
