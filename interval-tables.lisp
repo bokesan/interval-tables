@@ -13,6 +13,18 @@
 
 (in-package :interval-tables)
 
+(defun at-most-one-of (&rest values)
+  "Check that at most one of the arguments is true."
+  (labels ((look (xs one-p)
+	     (declare (type list xs))
+	     (cond ((null xs) t)
+		   ((car xs) (if one-p
+				 nil
+				 (look (cdr xs) t)))
+		   (t (look (cdr xs) one-p)))))
+    (look values nil)))
+
+
 (deftype interval-bounds () '(member :open :closed :closed-open :open-closed))
 
 (declaim (inline make-node node-lo node-hi node-max-upper
@@ -546,6 +558,7 @@ O(log n)."
 		map-intervals))
 
 (defun map-intervals (result-type function table &key containing intersecting above below from-end)
+  (assert (at-most-one-of containing intersecting above below))
   (cond ((null result-type) (%for-each function table from-end))
         ((eq result-type 'list) (%map-to-list function table containing from-end))
         ;; TODO: string vector, length check

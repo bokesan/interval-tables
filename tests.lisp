@@ -199,7 +199,9 @@
 		    (and (string= deleted-value old-value)
 			 present-p
 			 (= (interval-table-count table) (- old-count 1)))))))))))
-	
+
+;;;; internal stuff
+
 (defun max-depth (n)
   (declare (type array-length n))
   (if (= n 0)
@@ -214,3 +216,9 @@
 	  (declare (type interval-table table))
 	  (<= (interval-tables::height table)
 	      (max-depth (interval-table-count table)))))))
+
+(test at-most-one-of
+      (is-true (interval-tables::at-most-one-of nil nil 3 nil))
+      (is-false (interval-tables::at-most-one-of nil nil 3 nil 1))
+      (is-true (interval-tables::at-most-one-of))
+      (is-false (interval-tables::at-most-one-of "a" "b")))
