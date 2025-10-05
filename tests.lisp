@@ -10,7 +10,10 @@
 (fiveam:def-suite tests)
 (fiveam:in-suite tests)
 
-(setf fiveam:*on-error* :debug)
+;; (setf fiveam:*on-error* :debug)
+
+(setf check-it:*num-trials* 1000)
+
 
 (def-generator gen-interval-table ()
   (generator
@@ -80,22 +83,21 @@
 
 
 (test prop-set-get
-      (let ((*num-trials* 1000))
-	(is-true
-	 (check-it
-	  (generator (tuple (gen-interval-table) (integer) (integer 1 *) (string)))
-	  (lambda (x)
-	    (destructuring-bind (table lo size value) x
-	      (declare (type interval-table table)
-		       (type integer lo size)
-		       (type string value))
-	      (let* ((old-count (interval-table-count table))
-		     (hi (+ lo size))
-		     (old-value (get-interval lo hi table)))
-		(setf (get-interval lo hi table) value)
-		(and (string= (get-interval lo hi table) value)
-		     (= (interval-table-count table)
-			(if old-value old-count (+ old-count 1)))))))))))
+      (is-true
+       (check-it
+	(generator (tuple (gen-interval-table) (integer) (integer 1 *) (string)))
+	(lambda (x)
+	  (destructuring-bind (table lo size value) x
+	    (declare (type interval-table table)
+		     (type integer lo size)
+		     (type string value))
+	    (let* ((old-count (interval-table-count table))
+		   (hi (+ lo size))
+		   (old-value (get-interval lo hi table)))
+	      (setf (get-interval lo hi table) value)
+	      (and (string= (get-interval lo hi table) value)
+		   (= (interval-table-count table)
+		      (if old-value old-count (+ old-count 1))))))))))
 
 (defun cmp-intervals (lo1 hi1 lo2 hi2)
   (declaim (type integer lo1 hi1 lo2 hi2))
@@ -136,22 +138,21 @@
 				     table))))))))
 
 (test prop-delete-min
-      (let ((*num-trials* 1000))
-	(is-true
-	 (check-it
-	  (generator (gen-interval-table))
-	  (lambda (table)
-	    (declare (type interval-table table))
-	    (let ((old-count (interval-table-count table)))
-	      (multiple-value-bind (lo hi value)
-		  (delete-min table)
-		(if (zerop old-count)
-		    (not (or lo hi value))
-		    (and (= (interval-table-count table) (- old-count 1))
-			 (every-interval #'(lambda (a b c)
-					     (declare (ignore c))
-					     (interval< lo hi a b))
-					 table))))))))))
+      (is-true
+       (check-it
+	(generator (gen-interval-table))
+	(lambda (table)
+	  (declare (type interval-table table))
+	  (let ((old-count (interval-table-count table)))
+	    (multiple-value-bind (lo hi value)
+		(delete-min table)
+	      (if (zerop old-count)
+		  (not (or lo hi value))
+		  (and (= (interval-table-count table) (- old-count 1))
+		       (every-interval #'(lambda (a b c)
+					   (declare (ignore c))
+					   (interval< lo hi a b))
+				       table)))))))))
 
 	    
 (defun max-depth (n)
@@ -161,11 +162,10 @@
       (1+ (* 1.4 (log n 2)))))
 
 (test prop-depth
-      (let ((*num-trials* 1000))
-	(is-true
-	 (check-it
-	  (generator (gen-interval-table))
-	  (lambda (table)
-	    (declare (type interval-table table))
-	    (<= (interval-tables::height table)
-		(max-depth (interval-table-count table))))))))
+      (is-true
+       (check-it
+	(generator (gen-interval-table))
+	(lambda (table)
+	  (declare (type interval-table table))
+	  (<= (interval-tables::height table)
+	      (max-depth (interval-table-count table)))))))
