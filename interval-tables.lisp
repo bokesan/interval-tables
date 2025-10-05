@@ -4,8 +4,11 @@
   (:export :interval-table :make-interval-table :interval-table-p
 	   :interval-table-count :interval-table-empty-p
 	   :get-interval
-	   :delete-interval :delete-min
-	   :do-intervals :map-intervals :subtable :map-values))
+	   :get-min :get-max :get-last
+	   :delete-interval
+	   :delete-min :delete-max :delete-last
+	   :do-intervals :map-intervals :subtable :map-values
+	   :every-interval))
 
 (in-package :interval-tables)
 
@@ -144,6 +147,7 @@
 	   (type (or null node) tree)
 	   (optimize speed))
   (labels ((ins (e)
+	     (declare (type (or null node) e))
 	     (if (null e)
 		 (make-node :lo lo :hi hi :max-upper hi :value value)
 		 (let ((r (compare-interval-to-node %less lo hi e)))
@@ -250,7 +254,8 @@ INITIAL-CONTENTS* is a list of (lo hi . value) dotted lists that become the init
 (defun get-interval (lo hi table &optional default)
   "Look up the interval with bounds lo,hi in table.
 If the table contains the interval, returns its value and t.
-If not, returns default and nil."
+If not, returns default and nil.
+O(log n)."
   (let ((%less (interval-table-less table)))
     (labels ((walk (node)
 	       (if (null node)
@@ -284,8 +289,47 @@ If not, returns default and nil."
   `(interval-table-put ,lo ,hi ,table ,new-value))
 
 
+(declaim (ftype (function (interval-table) (values t t t)) get-min get-max get-last))
+
+(defun get-min (table)
+  "Get the minimum interval in the table.
+Returns three values: lower bound, upper bound, value.
+If the table is empty, returns nil for all values.
+O(log n)."
+  (labels ((walk (h)
+	     (declare (type node h))
+	     (let ((left (node-left h)))
+	       (if (null left)
+		   (values (node-lo h) (node-hi h) (node-value h))
+		   (walk left)))))
+    (let ((tree (interval-table-tree table)))
+      (if (null tree)
+	  (values nil nil nil)
+	  (walk tree)))))
+
+(defun get-max (table)
+  "Get the maximum interval in the table.
+Returns three values: lower bound, upper bound, value.
+If the table is empty, returns nil for all values.
+O(log n)."
+  (labels ((walk (h)
+	     (declare (type node h))
+	     (let ((right (node-right h)))
+	       (if (null right)
+		   (values (node-lo h) (node-hi h) (node-value h))
+		   (walk right)))))
+    (let ((tree (interval-table-tree table)))
+      (if (null tree)
+	  (values nil nil nil)
+	  (walk tree)))))
+
+
 (declaim (ftype (function (interval-table) (values t t t)) delete-min))
 (defun delete-min (table)
+    "Delete the minimum interval from the table.
+Returns the deleted interval as three values: lower bound, upper bound, value.
+If the table is empty, returns nil for all values.
+O(log n)."
   (let ((%less (interval-table-less table)))
     (labels ((del (h)
 	       (declare (type node h))
@@ -312,7 +356,7 @@ If not, returns default and nil."
 
 (declaim (ftype (function (t t interval-table) boolean) delete-interval))
 (defun delete-interval (lo hi table)
-  "Remove the entry for interval lo,hi in table, if any.
+  "Delete the entry for interval lo,hi in table, if any.
 Returns true if there was such an entry, or false otherwise."
   TODO)
 
@@ -452,3 +496,13 @@ Returns true if there was such an entry, or false otherwise."
 		    (walk (walk xs (node-right node)) (node-left node))))))
     (walk nil (interval-table-tree table))))
 
+(defun every-interval (predicate table)
+  "Check that predicate is true for each interval in the table.
+Predicate must take three arguments: lower bound, uppe bound, value."
+  (labels ((walk (e)
+	     (declare (type (or null node) e))
+	     (or (null e)
+		 (and (funcall predicate (node-lo e) (node-hi e) (node-value e))
+		      (walk (node-left e))
+		      (walk (node-right e))))))
+    (walk (interval-table-tree table))))

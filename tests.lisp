@@ -97,11 +97,43 @@
 		     (= (interval-table-count table)
 			(if old-value old-count (+ old-count 1)))))))))))
 
-(defun interval< (a b c d)
-  (declaim (type integer a b c d))
-  (or (< a c)
-      (and (= a c)
-	   (< b d))))
+(defun cmp-intervals (lo1 hi1 lo2 hi2)
+  (declaim (type integer lo1 hi1 lo2 hi2))
+  (cond ((< lo1 lo2) -1)
+	((> lo1 lo2)  1)
+	((< hi1 hi2) -1)
+	((> hi1 hi2)  1)
+	(t 0)))
+
+(test prop-get-min
+      (is-true
+       (check-it
+	(generator (gen-interval-table))
+	(lambda (table)
+	  (multiple-value-bind (lo hi value)
+	      (get-min table)
+	    (or (and (interval-table-empty-p table)
+		     (null lo) (null hi) (null value))
+		(and (not (interval-table-empty-p table))
+		     (every-interval #'(lambda (a b c)
+					 (declare (ignore c))
+					 (<= (cmp-intervals lo hi a b) 0))
+				     table))))))))
+
+(test prop-get-max
+      (is-true
+       (check-it
+	(generator (gen-interval-table))
+	(lambda (table)
+	  (multiple-value-bind (lo hi value)
+	      (get-max table)
+	    (or (and (interval-table-empty-p table)
+		     (null lo) (null hi) (null value))
+		(and (not (interval-table-empty-p table))
+		     (every-interval #'(lambda (a b c)
+					 (declare (ignore c))
+					 (>= (cmp-intervals lo hi a b) 0))
+				     table))))))))
 
 (test prop-delete-min
       (let ((*num-trials* 1000))
@@ -116,13 +148,10 @@
 		(if (zerop old-count)
 		    (not (or lo hi value))
 		    (and (= (interval-table-count table) (- old-count 1))
-			 (every #'identity
-				(map-intervals
-				 'list
-				 #'(lambda (a b c)
-				     (declare (ignore c))
-				     (interval< lo hi a b))
-				 table)))))))))))
+			 (every-interval #'(lambda (a b c)
+					     (declare (ignore c))
+					     (interval< lo hi a b))
+					 table))))))))))
 
 	    
 (defun max-depth (n)
