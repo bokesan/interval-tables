@@ -39,7 +39,7 @@ jobs:
       run: >
         clisp -q
         -x '(load "quicklisp.lisp")'
-        -x '(quicklisp-quickstart:install)'
+        -x '(load "~/quicklisp/setup.lisp")'
         -x '(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))'
         -x '(ql:quickload "interval-tables/tests")'
         -x '(ext:exit (if (fiveam:run-all-tests) 0 1))'
