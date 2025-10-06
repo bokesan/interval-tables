@@ -1,15 +1,31 @@
 (defpackage :interval-tables
   (:use :cl)
   (:import-from :alexandria :array-length)
-  (:export :interval-table :make-interval-table :interval-table-p
-	   :interval-table-bounds
-	   :interval-table-count :interval-table-empty-p
-	   :get-interval
-	   :get-min :get-max :get-last
-	   :delete-interval
-	   :delete-min :delete-max
-	   :do-intervals :map-intervals :subtable :map-values
-	   :every-interval :some-interval))
+  (:export
+   ;; === types ===
+   :interval-table
+   :interval-table-p
+   ;; === construction ===
+   :make-interval-table
+   ;; === properties ===
+   :interval-table-bounds
+   :interval-table-count
+   :interval-table-empty-p
+   ;; === querying ===
+   :get-interval
+   :get-min :get-max
+   ;; === insert / update / delete ===
+   ;; (setf (get-interval ...) value)
+   :delete-interval
+   :delete-min
+   :delete-max
+   ;; === search / iteration / mapping ===
+   :do-intervals
+   :map-intervals
+   :map-values
+   :subtable
+   :every-interval
+   :some-interval))
 
 (in-package :interval-tables)
 
@@ -457,112 +473,77 @@ O(log n)."
     (walk (interval-table-tree table))
     (values)))
 
+
+(declaim (ftype (function (function interval-table t)) %all)
+	 (ftype (function (function interval-table t t)) %containing)
+	 (ftype (function (function interval-table t t) list) %map-to-list)
+	 (ftype (function (function interval-table t t)) %for-each)
+	 (ftype (function ((or symbol list) function interval-table t t) vector) %map-to-vector))
+
+(defun %all (accept table from-end)
+  (labels ((walk (e)
+	     (declare (type (or null node) e))
+	     (when e
+	       (walk (if from-end (node-right e) (node-left e)))
+	       (funcall accept (node-lo e) (node-hi e) (node-value e))
+	       (walk (if from-end (node-left e) (node-right e))))))
+    (walk (interval-table-tree table))))
+
+(defun %containing (accept table point from-end)
+  (labels ((walk (e)
+	     (declare (type (or null node) e))
+	     (cond ((null e) nil)
+		   ((above-upper-bound-p table (node-max-upper e) point)
+		    ;; point is above the maximum upper bound: no result
+		    nil)
+		   ((before-node-p table e point)
+		    ;; point is to the left of the node: can't be in right subtree
+		    (walk (node-left e)))
+		   (t
+                    (walk (if from-end (node-right e) (node-left e)))
+		    (when (node-contains-point-p table e point)
+		      (funcall accept (node-lo e) (node-hi e) (node-value e)))
+		    (walk (if from-end (node-left e) (node-right e)))))))
+    (walk (interval-table-tree table))))
+
 (defun %map-to-list (function table containing from-end)
   (declare (type function function)
 	   (type interval-table table))
-  (labels ((collect (e xs)
-	     (declare (type (or null node) e)
-		      (type list xs))
-             (cond ((null e) xs)
-		   ((and containing (above-upper-bound-p table (node-max-upper e) containing))
-		    ;; point is above the maximum upper bound: no result
-		    xs)
-		   ((and containing (before-node-p table e containing))
-		    ;; point is to the left of the node: can't be in right subtree
-		    (collect (node-left e) xs))
-		   (t
-                    (collect
-		     (node-left e)
-		     (if (or (not containing)
-			     (node-contains-point-p table e containing))
-			 (cons (funcall function (node-lo e) (node-hi e) (node-value e))
-                               (collect (node-right e) xs))
-			 (collect (node-right e) xs))))))
-	   (collect-from-end (e xs)
-	     (declare (type (or null node) e)
-		      (type list xs))
-             (cond ((null e) xs)
-		   ((and containing (above-upper-bound-p table (node-max-upper e) containing))
-		    ;; point is above the maximum upper bound: no result
-		    xs)
-		   ((and containing (before-node-p table e containing))
-		    ;; point is to the left of the node: can't be in right subtree
-		    (collect-from-end (node-left e) xs))
-		   (t
-                    (collect-from-end
-		     (node-right e)
-		     (if (or (not containing)
-			     (node-contains-point-p table e containing))
-			 (cons (funcall function (node-lo e) (node-hi e) (node-value e))
-                               (collect-from-end (node-left e) xs))
-			 (collect-from-end (node-left e) xs)))))))
-    (if from-end
-	(collect-from-end (interval-table-tree table) nil)
-	(collect (interval-table-tree table) nil))))
+  ;; TODO: support :INTERSECTING, :ABOVE and :BELOW
+  (let ((result nil))
+    (flet ((accept (lo hi value)
+	     (push (funcall function lo hi value) result)))
+      (cond (containing
+	     (%containing #'accept table containing from-end))
+	    (t
+	     (%all #'accept table from-end)))
+      (nreverse result))))
 
 (defun %map-to-vector (element-type function table containing from-end)
   (let ((result (make-array 10 :element-type element-type :fill-pointer 0 :adjustable t)))
-    (labels ((add-result (e)
-	       (declare (type node e))
-	       (vector-push-extend (funcall function (node-lo e) (node-hi e) (node-value e))
-				   result
-				   (+ 1 (* 2 (length result)))))
-	     (walk (e)
-	       (declare (type (or null node) e))
-	       (cond ((null e) nil)
-		     ((and containing (above-upper-bound-p table (node-max-upper e) containing))
-		      ;; point is above the maximum upper bound: no result
-		      nil)
-		     ((and containing (before-node-p table e containing))
-		      ;; point is to the left of the node: can't be in right subtree
-		      (walk (node-left e)))
-		     (t
-                      (walk (node-left e))
-		      (when (or (not containing)
-				(node-contains-point-p table e containing))
-			(add-result e))
-		      (walk (node-right e)))))
-	     (walk-from-end (e)
-	       (declare (type (or null node) e))
-	       (cond ((null e) nil)
-		     ((and containing (above-upper-bound-p table (node-max-upper e) containing))
-		      ;; point is above the maximum upper bound: no result
-		      nil)
-		     ((and containing (before-node-p table e containing))
-		      ;; point is to the left of the node: can't be in right subtree
-		      (walk-from-end (node-left e)))
-		     (t
-                      (walk-from-end (node-right e))
-		      (when (or (not containing)
-				(node-contains-point-p table e containing))
-			(add-result e))
-		      (walk-from-end (node-left e))))))
-      (if from-end
-	  (walk-from-end (interval-table-tree table))
-	  (walk (interval-table-tree table)))
+    (flet ((add-result (lo hi value)
+	     (vector-push-extend (funcall function lo hi value)
+				 result
+				 (+ 1 (* 2 (length result))))))
+      (cond (containing
+	     (%containing #'add-result table containing from-end))
+	    (t
+	     (%all #'add-result table from-end)))
       result)))
 
-(defun %for-each (function table from-end)
+(defun %for-each (function table containing from-end)
+  ;; TODO: support keywords as in `map-intervals'.
   (declare (type function function)
 	   (type interval-table table))
-  (labels ((walk (e)
-	     (declare (type (or null node) e))
-             (when e
-               (walk (node-left e))
-               (funcall function (node-lo e) (node-hi e) (node-value e))
-               (walk (node-right e))))
-	   (walk-from-end (e)
-	     (declare (type (or null node) e))
-             (when e
-               (walk-from-end (node-right e))
-               (funcall function (node-lo e) (node-hi e) (node-value e))
-               (walk-from-end (node-left e)))))
-    (if from-end
-	(walk-from-end (interval-table-tree table))
-	(walk (interval-table-tree table)))))
+  (cond (containing (%containing function table containing from-end))
+	(t (%all function table from-end))))
 
-(defmacro do-intervals (((lo hi) value table) &body body)
+(defmacro do-intervals (((lo hi value) table) &body body)
   "Iterate over the entries in table."
+  ;; TODO: support keywords as in `map-intervals'
+  ;; TODO: support more forms:
+  ;;        (do-intervals (value table) ...)
+  ;;        (do-intervals ((lo hi value) table) ...)
   (let ((proc (gensym))
         (e (gensym))
         (tab (gensym)))
@@ -600,8 +581,9 @@ The entries to include are selected by one of the following keyword arguments:
 :INTERSECTING (LO HI) - all intervals intersecting the interval LO, HI.
 :ABOVE POINT - all intervals whose lower bound is strictly greater than point.
 :BELOW POINT - all intervals whose upper bound is strictly less than point."
+  ;; TODO: above and below, which can be used together
   (assert (at-most-one-of containing intersecting above below))
-  (cond ((null result-type) (%for-each function table from-end))
+  (cond ((null result-type) (%for-each function table containing from-end))
         ((eq result-type 'list) (%map-to-list function table containing from-end))
 	((eq result-type 'string) (%map-to-vector 'character function table containing from-end))
 	((eq result-type 'vector) (%map-to-vector t          function table containing from-end))
