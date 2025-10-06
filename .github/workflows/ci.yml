@@ -17,24 +17,32 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install SBCL on Linux
+    - name: Install CLISP and SBCL on Linux
       if: ${{ startsWith(matrix.os, 'ubuntu') }}
-      run: sudo apt-get install sbcl
-    - name: Install SBCL on macOS
+      run: sudo apt-get install clisp sbcl
+    - name: Install CLISP and SBCL on macOS
       if: ${{ startsWith(matrix.os, 'mac') }}
-      run: brew install sbcl
+      run: brew install clisp sbcl
 
     - name: Download Quicklisp
       run: curl -O https://beta.quicklisp.org/quicklisp.lisp
-    - name: Install Quicklisp
-      run: sbcl --non-interactive --load quicklisp.lisp --eval '(quicklisp-quickstart:install)' --eval '(ql-util:without-prompting (ql:add-to-init-file))'
 
-    - name: Test
+    - name: Test with SBCL
       run: >
-        sbcl --non-interactive
+        sbcl --non-interactive --load quicklisp.lisp
+        --eval '(quicklisp-quickstart:install)'
         --eval '(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))'
         --eval '(ql:quickload "interval-tables/tests")'
         --eval '(quit :unix-status (if (fiveam:run-all-tests) 0 1))'
+
+    - name: Test with CLISP
+      run: >
+        clisp -q
+	-x '(load "quicklisp.lisp")'
+	-x '(quicklisp-quickstart:install)'
+        -x '(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))'
+        -x '(ql:quickload "interval-tables/tests")'
+        -x '(ext:exit (if (fiveam:run-all-tests) 0 1))'
 
   build-windows:
     runs-on: windows-2022
@@ -46,12 +54,11 @@ jobs:
 
     - name: Download Quicklisp
       run: Invoke-WebRequest -Uri "https://beta.quicklisp.org/quicklisp.lisp" -OutFile "quicklisp.lisp"
-    - name: Install Quicklisp
-      run: sbcl --non-interactive --load quicklisp.lisp --eval "(quicklisp-quickstart:install)" --eval "(ql-util:without-prompting (ql:add-to-init-file))"
 
     - name: Test
       run: >
-        sbcl --non-interactive
+        sbcl --non-interactive --load quicklisp.lisp
+        --eval "(quicklisp-quickstart:install)"
         --eval "(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))"
         --eval "(ql:quickload :interval-tables/tests)"
         --eval "(quit :unix-status (if (fiveam:run-all-tests) 0 1))"
@@ -64,11 +71,10 @@ jobs:
       run: brew install clozure-cl
     - name: Download Quicklisp
       run: curl -O https://beta.quicklisp.org/quicklisp.lisp
-    - name: Install Quicklisp
-      run: ccl64 --load quicklisp.lisp --eval '(quicklisp-quickstart:install)' --eval '(ql-util:without-prompting (ql:add-to-init-file))'
     - name: Test
       run: >
-        ccl64
+        ccl64 --load quicklisp.lisp
+        --eval '(quicklisp-quickstart:install)'
         --eval "(pushnew (uiop/os:getcwd) quicklisp:*local-project-directories* :test (function equalp))"
         --eval "(ql:quickload :interval-tables/tests)"
         --eval "(quit :unix-status (if (fiveam:run-all-tests) 0 1))"
