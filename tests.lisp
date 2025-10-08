@@ -73,6 +73,7 @@
 	  (is-false present-p))
 	(is (equal '((1 10 "E1") (5 15 "E5")) (map-intervals 'list #'list table :containing 9)))
 	(is (equal '((5 15 "E5") (1 10 "E1")) (map-intervals 'list #'list table :from-end t :containing 9)))
+	(is (equalp #("E5" "E2") (map-intervals 'vector #'third-arg table :intersecting '(13 50))))
 	(is (equal '("E4" "E1" "E5" "E2") (map-intervals 'list #'third-arg table)))
 	(is (equal '("E2" "E5" "E1" "E4") (map-intervals 'list #'third-arg table :from-end t)))
 	(is (equal '(0 2 "E4") (multiple-value-list (get-min table))))
@@ -135,6 +136,53 @@
 	((> hi1 hi2)  1)
 	(t 0)))
 
+(defun contains-p (bounds lo hi point)
+  (ecase bounds
+    (:closed      (<= lo point hi))
+    (:open        (<  lo point hi))
+    (:closed-open (and (<= lo point) (<  point hi)))
+    (:open-closed (and (<  lo point) (<= point hi)))))
+
+(defun intervals-intersect-p (closed-p lo1 hi1 lo2 hi2)
+  (if closed-p
+      (and (<= lo1 hi2) (>= hi1 lo2))
+      (and (< lo1 hi2) (> hi1 lo2))))
+
+(test prop-containing
+      (is-true
+       (check-it
+	(generator (tuple (gen-interval-table) (integer)))
+	(lambda (x)
+	  (destructuring-bind (table point) x
+	    (declare (type interval-table table)
+		     (type integer point))
+	    (let* ((bounds (interval-table-bounds table))
+		   (expected (remove-if-not
+			      #'(lambda (e)
+				  (destructuring-bind (lo hi val) e
+				    (contains-p bounds lo hi point)))
+			      (map-intervals 'list #'list table)))
+		   (result (map-intervals 'list #'list table :containing point)))
+	      (equal expected result)))))))
+
+(test prop-intersecting
+      (is-true
+       (check-it
+	(generator (tuple (gen-interval-table) (integer) (integer 0 *)))
+	(lambda (x)
+	  (destructuring-bind (table lo size) x
+	    (declare (type interval-table table)
+		     (type integer lo size))
+	    (let* ((closed-p (eq (interval-table-bounds table) :closed))
+		   (hi (if closed-p (+ lo size) (+ lo size 1)))
+		   (expected (remove-if-not
+			      #'(lambda (e)
+				  (destructuring-bind (a b val) e
+				    (intervals-intersect-p closed-p lo hi a b)))
+			      (map-intervals 'list #'list table)))
+		   (result (map-intervals 'list #'list table :intersecting (list lo hi))))
+	      (equal expected result)))))))
+	  
 (test prop-get-min
       (is-true
        (check-it

@@ -440,15 +440,15 @@ O(log n)."
 
 (defun before-node-p (tab node point)
   (let ((%less (interval-table-less tab)))
-    (ecase (interval-table-bounds tab)
+    (case (interval-table-bounds tab)
       ((:closed :closed-open) (%lt point (node-lo node)))
-      ((:open :open-closed)   (%le point (node-lo node))))))
+      (t                      (%le point (node-lo node))))))
 
 (defun above-upper-bound-p (tab upper point)
   (let ((%less (interval-table-less tab)))
-    (ecase (interval-table-bounds tab)
+    (case (interval-table-bounds tab)
       ((:closed :open-closed) (%gt point upper))
-      ((:open :closed-open) (%ge point upper)))))
+      (t                      (%ge point upper)))))
 
 (defun node-contains-point-p (tab node point)
   (let ((%less (interval-table-less tab))
@@ -460,6 +460,11 @@ O(log n)."
       (:closed-open (and (%le lo point) (%lt point hi)))
       (:open-closed (and (%lt lo point) (%le point hi))))))
 
+(defun overlaps-node-p (tab node lo hi)
+  (let ((%less (interval-table-less tab)))
+    (if (eq (interval-table-bounds tab) :closed)
+	(and (%le lo (node-hi node)) (%ge hi (node-lo node)))
+        (and (%lt lo (node-hi node)) (%gt hi (node-lo node))))))
 
 (declaim (ftype (function (function interval-table)) map-values))
 (defun map-values (function table)
@@ -506,7 +511,24 @@ O(log n)."
 		    (walk (if from-end (node-left e) (node-right e)))))))
     (walk (interval-table-tree table))))
 
-(defun %map-to-list (function table containing from-end)
+(defun %intersecting (accept table interval from-end)
+  (let ((lo (car interval))
+	(hi (cadr interval)))
+    (labels ((walk (e)
+	       (declare (type (or null node) e))
+	       (cond ((null e) nil)
+		     ((above-upper-bound-p table (node-max-upper e) lo)
+		      nil)
+		     ((before-node-p table e hi)
+		      (walk (node-left e)))
+		     (t
+		      (walk (if from-end (node-right e) (node-left e)))
+		      (when (overlaps-node-p table e lo hi)
+			(funcall accept (node-lo e) (node-hi e) (node-value e)))
+		      (walk (if from-end (node-left e) (node-right e)))))))
+      (walk (interval-table-tree table)))))
+
+(defun %map-to-list (function table containing intersecting from-end)
   (declare (type function function)
 	   (type interval-table table))
   ;; TODO: support :INTERSECTING, :ABOVE and :BELOW
@@ -515,11 +537,13 @@ O(log n)."
 	     (push (funcall function lo hi value) result)))
       (cond (containing
 	     (%containing #'accept table containing from-end))
+	    (intersecting
+	     (%intersecting #'accept table intersecting from-end))
 	    (t
 	     (%all #'accept table from-end)))
       (nreverse result))))
 
-(defun %map-to-vector (element-type function table containing from-end)
+(defun %map-to-vector (element-type function table containing intersecting from-end)
   (let ((result (make-array 10 :element-type element-type :fill-pointer 0 :adjustable t)))
     (flet ((add-result (lo hi value)
 	     (vector-push-extend (funcall function lo hi value)
@@ -527,15 +551,17 @@ O(log n)."
 				 (+ 1 (* 2 (length result))))))
       (cond (containing
 	     (%containing #'add-result table containing from-end))
+	    (intersecting
+	     (%intersecting #'add-result table intersecting from-end))
 	    (t
 	     (%all #'add-result table from-end)))
       result)))
 
-(defun %for-each (function table containing from-end)
-  ;; TODO: support keywords as in `map-intervals'.
+(defun %for-each (function table containing intersecting from-end)
   (declare (type function function)
 	   (type interval-table table))
   (cond (containing (%containing function table containing from-end))
+	(intersecting (%intersecting function table intersecting from-end))
 	(t (%all function table from-end))))
 
 (defmacro do-intervals (((lo hi value) table) &body body)
@@ -583,12 +609,12 @@ The entries to include are selected by one of the following keyword arguments:
 :BELOW POINT - all intervals whose upper bound is strictly less than point."
   ;; TODO: above and below, which can be used together
   (assert (at-most-one-of containing intersecting above below))
-  (cond ((null result-type) (%for-each function table containing from-end))
-        ((eq result-type 'list) (%map-to-list function table containing from-end))
-	((eq result-type 'string) (%map-to-vector 'character function table containing from-end))
-	((eq result-type 'vector) (%map-to-vector t          function table containing from-end))
+  (cond ((null result-type) (%for-each function table containing intersecting from-end))
+        ((eq result-type 'list) (%map-to-list function table containing intersecting from-end))
+	((eq result-type 'string) (%map-to-vector 'character function table containing intersecting from-end))
+	((eq result-type 'vector) (%map-to-vector t          function table containing intersecting from-end))
 	((and (consp result-type) (eq (car result-type) 'vector))
-	  (%map-to-vector (if (cdr result-type) (cadr result-type) t) function table containing from-end))
+	  (%map-to-vector (if (cdr result-type) (cadr result-type) t) function table containing intersecting from-end))
 	;; string (string 4711) (string *) vector (vector type [size]) (array type (size))
         (t (error "invalid result-type ~S" result-type))))
 
