@@ -73,16 +73,8 @@ As the table is sorted by the intervals, there are also the functions
 `delete-min` to delete and return the lowest interval from the table:
 
 ```lisp
-(get-min *table*) => 0, 2, "E4")
+(get-min *table*) => 0, 2, "E4"
 (delete-min *table*) => 0, 2, "E4"
-(get-min *table*) => 1, 10, "E1")
+(get-min *table*) => 1, 10, "E1"
 ```
 
-
-
-## FAQ
-
-*Why is the package name in plural?*
-
-I expect the package to offer multiple implementations of interval tables with differing
-characteristics.
