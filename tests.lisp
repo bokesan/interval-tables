@@ -101,6 +101,13 @@
 	(is (string= "CA" (map-intervals 'string #'third-arg table)))
 	(is (string= "AC" (map-intervals 'string #'third-arg table :from-end t)))))
 
+(test do-intervals
+      (let ((table (make-interval-table #'< :initial-contents '((4 6 #\A) (2 3 #\C))))
+	    (result nil))
+	(do-intervals (value table)
+	  (push value result))
+	(is (equal '(#\A #\C) result))))
+
 (test every-some
       (let ((table (make-interval-table
 		    #'<
@@ -148,6 +155,13 @@
       (and (<= lo1 hi2) (>= hi1 lo2))
       (and (< lo1 hi2) (> hi1 lo2))))
 
+(defun interval-between-p (table lo hi from to)
+  (case (interval-table-bounds table)
+    (:closed      (and (or (not from) (<  from lo)) (or (not to) (>  to hi))))
+    (:open        (and (or (not from) (<= from lo)) (or (not to) (>= to hi))))
+    (:closed-open (and (or (not from) (<  from lo)) (or (not to) (>= to hi))))
+    (:open-closed (and (or (not from) (<= from lo)) (or (not to) (>  to hi))))))
+
 (test prop-containing
       (is-true
        (check-it
@@ -160,6 +174,7 @@
 		   (expected (remove-if-not
 			      #'(lambda (e)
 				  (destructuring-bind (lo hi val) e
+				    (declare (ignore val))
 				    (contains-p bounds lo hi point)))
 			      (map-intervals 'list #'list table)))
 		   (result (map-intervals 'list #'list table :containing point)))
@@ -178,10 +193,45 @@
 		   (expected (remove-if-not
 			      #'(lambda (e)
 				  (destructuring-bind (a b val) e
+				    (declare (ignore val))
 				    (intervals-intersect-p closed-p lo hi a b)))
 			      (map-intervals 'list #'list table)))
 		   (result (map-intervals 'list #'list table :intersecting (list lo hi))))
 	      (equal expected result)))))))
+
+(test prop-between
+      (is-true
+       (check-it
+	(generator (tuple (gen-interval-table) (integer) (integer 0 *)))
+	(lambda (x)
+	  (destructuring-bind (table from size) x
+	    (declare (type interval-table table)
+		     (type integer from size))
+	    (let* ((closed-p (eq (interval-table-bounds table) :closed))
+		   (to (if closed-p (+ from size) (+ from size 1)))
+		   (all (map-intervals 'list #'list table))
+		   (expected-above (remove-if-not
+				    #'(lambda (e)
+					(destructuring-bind (lo hi val) e
+					  (declare (ignore val))
+					  (interval-between-p table lo hi from nil)))
+				    all))
+		   (expected-below (remove-if-not
+				    #'(lambda (e)
+					(destructuring-bind (lo hi val) e
+					  (declare (ignore val))
+					  (interval-between-p table lo hi nil to)))
+				    all))
+		   (expected-between (remove-if-not
+				      #'(lambda (e)
+					  (destructuring-bind (lo hi val) e
+					    (declare (ignore val))
+					    (interval-between-p table lo hi from to)))
+				      all)))
+	      (and
+	       (equal expected-above (map-intervals 'list #'list table :above from))
+	       (equal expected-below (map-intervals 'list #'list table :below to))
+	       (equal expected-between (map-intervals 'list #'list table :above from :below to)))))))))
 	  
 (test prop-get-min
       (is-true
