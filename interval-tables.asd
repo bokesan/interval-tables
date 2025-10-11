@@ -5,9 +5,11 @@
   :licence "MIT"
   :bug-tracker "https://github.com/bokesan/interval-tables/issues"
   :source-control (:git "https://github.com/bokesan/interval-tables.git")
+  :in-order-to ((test-op (test-op "interval-tables/tests")))
   :depends-on ("alexandria")
   :components ((:file "interval-tables")))
 
 (defsystem "interval-tables/tests"
   :depends-on ("fiveam" "check-it" "interval-tables")
-  :components ((:file "tests")))
+  :components ((:file "tests"))
+  :perform (test-op (o c) (symbol-call :fiveam :run-all-tests)))
