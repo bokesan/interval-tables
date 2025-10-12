@@ -1,5 +1,9 @@
-(use-package :interval-tables)
-	
+(defpackage :benchmarks
+  (:use :cl :interval-tables :low-crit)
+  (:export :run-all-benchmarks))
+
+(in-package :benchmarks)
+
 (defun gen-random-table (max lap n)
   (declare (type (integer 1 100000000) max n)
 	   (type (integer 1 1000000) lap))
@@ -11,26 +15,32 @@
 
 (defparameter *data-size* 10000)
 
-(defun bench ()
-  (let (table keys)
-    (princ "Create:")
-    (org.shirakumo.trivial-benchmark:with-timing (100)
-      (setf table (gen-random-table *data-size* 20 *data-size*)))
-    (format t "Actual table size: ~D~%" (interval-table-count table))
-    (setf keys (map-intervals 'vector #'(lambda (lo hi val) (cons lo hi)) table))
-    (princ "Count:")
-    (org.shirakumo.trivial-benchmark:with-timing (1000)
-      (interval-table-count table))
-    (princ "get-min:")
-    (org.shirakumo.trivial-benchmark:with-timing (10000)
-      (get-min table))
-    (princ "get-interval:")
-    (org.shirakumo.trivial-benchmark:with-timing (100)
-      (loop for iv across keys do
-	    (get-interval (car iv) (cdr iv) table)))
-    (princ "containing:")
-    (org.shirakumo.trivial-benchmark:with-timing (100)
-      (let ((total 0))
-	(dotimes (i *data-size*)
-	  (map-intervals nil #'(lambda (lo hi val) (incf total)) table :containing i))))
-    ))
+(defun third-arg (a b c)
+  (declare (ignore a b))
+  c)
+
+(defvar *benchmarks*
+  (let ((table (gen-random-table *data-size* 20 *data-size*)))
+    (bgroup "all"
+      (bench "create" (gen-random-table *data-size* 20 *data-size*))
+      (bench "count" (interval-table-count table))
+      (bench "empty-p" (interval-table-empty-p table))
+      (bench "get-min" (get-min table))
+      (bench "get-max" (get-max table))
+      (bench "get-interval" (get-interval 10000 25 table))
+      (bench "containing" (map-intervals nil #'third-arg table :containing 10017))
+      (bench "intersecting" (map-intervals nil #'third-arg table :intersecting '(10000 10009)))
+      (bench "above/below" (map-intervals nil #'third-arg table :above 9999 :below 100010))
+      (bench "every" (every-interval #'(lambda (a b c)
+					 (declare (ignore a b))
+					 (numberp c))
+				     table))
+      (bench "some" (some-interval #'(lambda (a b c)
+				       (declare (ignore a b))
+				       (stringp c))
+				   table)))))
+
+(defun run-all-benchmarks ()
+  (let ((*seconds-per-benchmark* 10)
+	(*verbose* t))
+    (run-benchmarks *benchmarks*)))
