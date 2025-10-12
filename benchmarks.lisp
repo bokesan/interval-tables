@@ -75,4 +75,4 @@
 
 (defun run-all-benchmarks ()
   (run-benchmarks (mapcar #'make-bgroup '(100000 1000000))
-		  :time 5 :report :tree))
+		  :time 5 :progress :tree))

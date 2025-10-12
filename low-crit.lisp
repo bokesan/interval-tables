@@ -143,8 +143,8 @@ followed by a short description of the time units."
       (symbolp obj)
       (numberp obj)))
 
-(defun run-benchmarks (benchmarks &key (time *seconds-per-benchmark*) (report :flat) verbose)
-  (declare (type (member :none :flat :tree) report)
+(defun run-benchmarks (benchmarks &key (time *seconds-per-benchmark*) (progress :flat) verbose)
+  (declare (type (member :none :flat :tree) progress)
 	   (type real time))
   (let ((*verbose* verbose)
 	(indent 4))
@@ -154,7 +154,7 @@ followed by a short description of the time units."
 	       (let ((overhead (measure *noop* :time 0.4)))
 		 (multiple-value-bind (mean iters elapsed)
 		     (measure proc :time time)
-		   (case report
+		   (case progress
 		     (:flat (format t "~&~A:~40,2T~A"
 				    (stringify-path path name)
 				    (format-seconds (- mean overhead))))
@@ -162,12 +162,12 @@ followed by a short description of the time units."
 				    (* indent (length path))
 				    name
 				    (format-seconds (- mean overhead)))))
-		   (when (and *verbose* (not (eq report :none)))
+		   (when (and *verbose* (not (eq progress :none)))
 		     (format t "  (iters: ~11D, overhead: ~A, elapsed: ~A)"
 			     iters
 			     (format-seconds overhead)
 			     (format-seconds elapsed)))
-		   (unless (eq report :none)
+		   (unless (eq progress :none)
 		     (terpri)))))
 	     (run (path bm)
 	       (declare (type list path))
@@ -175,9 +175,9 @@ followed by a short description of the time units."
 		     ((functionp bm) (run-bm path (format nil "~S" bm) bm))
 		     ((consp bm)
 		      (cond ((label-p (car bm))
-			     (unless (eq report :none)
+			     (when (eq progress :tree)
 			       (format t "~v<~>~A~%" (* indent (length path)) (car bm)))
-			     (setq path (cons 0 path))
+			     (setq path (cons (car bm) path))
 			     (dolist (b (cdr bm))
 			       (run path b)))
 			    (t
