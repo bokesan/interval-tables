@@ -1,6 +1,6 @@
 (defpackage :low-crit
   (:use :cl)
-  (:export :run-benchmarks :bench :bgroup :*verbose* :*seconds-per-benchmark*))
+  (:export :run-benchmarks :bench :bgroup))
 
 (in-package :low-crit)
 
@@ -44,6 +44,15 @@ followed by a short description of the time units."
 	  (incf e 3))
 	(format nil "~G s" k))))
 
+(declaim (inline make-benchmark benchmark-name benchmark-proc benchmake-init benchmark-cleanup))
+(defstruct benchmark
+  (name nil :type string :read-only t)
+  (proc nil :type function :read-only t)
+  (init nil :type (or null function) :read-only t)
+  (cleanup nil :type (or null function) :read-only t))
+
+#+sbcl (declaim (sb-ext:freeze-type benchmark))
+
 
 (declaim (ftype (function ((fast-integer 1) function) integer) run-repeatedly))
 (defun run-repeatedly (iters proc)
@@ -58,9 +67,11 @@ followed by a short description of the time units."
 (declaim (notinline run-repeatedly))
 
 
-(declaim (ftype (function (function) (values real unsigned-byte real)) measure))
-(defun measure (proc)
-  (let ((timeout (* *seconds-per-benchmark* internal-time-units-per-second))
+(declaim (ftype (function (function &key (:time real))
+			  (values real unsigned-byte real))
+		measure))
+(defun measure (proc &key (time *seconds-per-benchmark*))
+  (let ((timeout (* time internal-time-units-per-second))
 	(start (get-internal-real-time)))
     (do* ((iters 1 (ceiling (* iters +growth-factor+)))
 	  (result (run-repeatedly iters proc)
@@ -85,46 +96,58 @@ followed by a short description of the time units."
   (loop for time = 5 then (* time 2/3)
 	while (>= time 1/1000)
 	do
-	(let ((*seconds-per-benchmark* time))
-	  (format t "Time: ~A: ~A overhead~%"
-		  (format-seconds *seconds-per-benchmark*)
-		  (format-seconds (measure *noop*))))))
+	(format t "Time: ~A: ~A overhead~%"
+		(format-seconds time)
+		(format-seconds (measure *noop* :time time)))))
 
+(defun label-p (obj)
+  (or (stringp obj)
+      (characterp obj)
+      (symbolp obj)
+      (numberp obj)))
 
-
-(defun run-benchmarks (&rest benchmarks-and-groups)
-  (let ((overhead (measure *noop*)))
+(defun run-benchmarks (benchmarks &key (time *seconds-per-benchmark*) (report :flat) verbose)
+  (declare (type (member :none :flat :tree) report)
+	   (type real time))
+  (let ((*verbose* verbose)
+	(indent 4))
     (when *verbose*
-      (format t "~&nocrit overhead: ~A. Running benchmarks...~%" (format-seconds overhead)))
-    (labels ((run (path bm)
-	       (declare (type list path bm))
-	       (ecase (car bm)
-		 (bgroup
-		  (let ((name (cadr bm))
-			(benches (cddr bm)))
-		    (map nil #'(lambda (b) (run (cons name path) b)) benches)))
-		 (bench
-		  (let ((name (cadr bm))
-			(thunk (caddr bm))
-			(overhead (let ((*seconds-per-benchmark* 0.5))
-				    (measure *noop*))))
-		    (multiple-value-bind (mean iters elapsed)
-			(measure thunk)
-		      (format t "~&~A:~40,2T~A"
-			      (stringify-path path name)
-			      (format-seconds (- mean overhead)))
-		      (when *verbose*
-			(format t "  (iters: ~11D, overhead: ~A, elapsed: ~A)"
-				iters
-				(format-seconds overhead)
-				(format-seconds elapsed)))
-		      (terpri)))))))
-      (dolist (b benchmarks-and-groups)
-	(run nil b)))))
-
-(defun bgroup (name &rest benchmarks-and-groups)
-  "Group benchmarks/groups under one name."
-  `(bgroup ,(string name) ,@benchmarks-and-groups))
+      (format t "~&Running benchmarks...~%"))
+    (labels ((run-bm (path name proc)
+	       (let ((overhead (measure *noop* :time 0.4)))
+		 (multiple-value-bind (mean iters elapsed)
+		     (measure proc :time time)
+		   (case report
+		     (:flat (format t "~&~A:~40,2T~A"
+				    (stringify-path path name)
+				    (format-seconds (- mean overhead))))
+		     (:tree (format t "~&~v<~>~A:~30,2T~A"
+				    (* indent (length path))
+				    name
+				    (format-seconds (- mean overhead)))))
+		   (when (and *verbose* (not (eq report :none)))
+		     (format t "  (iters: ~11D, overhead: ~A, elapsed: ~A)"
+			     iters
+			     (format-seconds overhead)
+			     (format-seconds elapsed)))
+		   (unless (eq report :none)
+		     (terpri)))))
+	     (run (path bm)
+	       (declare (type list path))
+	       (cond ((benchmark-p bm) (run-bm path (benchmark-name bm) (benchmark-proc bm)))
+		     ((functionp bm) (run-bm path (format nil "~S" bm) bm))
+		     ((consp bm)
+		      (cond ((label-p (car bm))
+			     (unless (eq report :none)
+			       (format t "~v<~>~A~%" (* indent (length path)) (car bm)))
+			     (setq path (cons 0 path))
+			     (dolist (b (cdr bm))
+			       (run path b)))
+			    (t
+			     (dolist (b bm)
+			       (run path b)))))
+		     (t (error "invalid benchmark: ~S" bm)))))
+      (run nil benchmarks))))
 
 (defmacro bench (arg1 &rest args)
   "Define a single benchmark test.
@@ -138,4 +161,4 @@ Can take various forms:
 	(setq name (string arg1))
 	(setq name (format nil "~S" arg1)
 	      forms (cons arg1 args)))
-    `(list 'bench ,name #'(lambda () ,@forms))))
+    `(make-benchmark :name ,name :proc #'(lambda () ,@forms))))

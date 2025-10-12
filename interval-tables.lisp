@@ -93,12 +93,13 @@
 	r
 	(compare less (node-hi a) (node-hi b)))))
 
-(defun compare-interval-to-node (less lo hi node)
-  (let ((r (compare less lo (node-lo node))))
-    (if (/= r 0)
-	r
-	(compare less hi (node-hi node)))))
-
+(defun compare-interval-to-node (%less lo hi node)
+  (let ((lo2 (node-lo node)))
+    (cond ((%lt lo lo2) -1)
+	  ((%gt lo lo2)  1)
+	  ((%lt hi (node-hi node)) -1)
+	  ((%gt hi (node-hi node))  1)
+	  (t 0))))
 
 (declaim (inline red-p flip-color))
   
@@ -294,12 +295,12 @@ O(log n)."
   (let ((%less (interval-table-less table)))
     (labels ((walk (node)
 	       (declare (type (or null node) node))
-	       (if (null node)
-		   (values default nil)
-		   (let ((r (compare-interval-to-node %less lo hi node)))
-		     (cond ((< r 0) (walk (node-left node)))
-			   ((> r 0) (walk (node-right node)))
-			   (t (values (node-value node) t)))))))
+	       (cond ((null node) (values default nil))
+		     ((%lt lo (node-lo node)) (walk (node-left node)))
+		     ((%gt lo (node-lo node)) (walk (node-right node)))
+		     ((%lt hi (node-hi node)) (walk (node-left node)))
+		     ((%gt hi (node-hi node)) (walk (node-right node)))
+		     (t (values (node-value node) t)))))
       (walk (interval-table-tree table)))))
 
 (declaim (ftype (function (t t interval-table) boolean) empty-interval-p))
