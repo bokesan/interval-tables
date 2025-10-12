@@ -45,7 +45,7 @@ followed by a short description of the time units."
 	(format nil "~G s" k))))
 
 
-(declaim (ftype (function ((fast-integer 1) function) real) run-repeatedly))
+(declaim (ftype (function ((fast-integer 1) function) integer) run-repeatedly))
 (defun run-repeatedly (iters proc)
   (declare (type (fast-integer 1) iters)
 	   (type function proc))
@@ -53,7 +53,7 @@ followed by a short description of the time units."
     (declare (optimize speed (safety 0)))
     (dotimes (i iters)
       (funcall proc))
-    (/ (- (get-internal-run-time) start) internal-time-units-per-second)))
+    (- (get-internal-run-time) start)))
 
 (declaim (notinline run-repeatedly))
 
@@ -68,7 +68,9 @@ followed by a short description of the time units."
 	  (elapsed (- (get-internal-real-time) start)
 		   (- (get-internal-real-time) start)))
 	((> elapsed timeout)
-	 (values (/ result iters) iters (/ elapsed internal-time-units-per-second)))
+	 (values (/ result (* iters internal-time-units-per-second))
+		 iters
+		 (/ elapsed internal-time-units-per-second)))
       (setq result (run-repeatedly iters proc)))))
 
 (declaim (ftype (function (list string) string) stringify-path))

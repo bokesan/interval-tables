@@ -42,5 +42,5 @@
 
 (defun run-all-benchmarks ()
   (let ((*seconds-per-benchmark* 10)
-	(*verbose* t))
+	(*verbose* nil))
     (run-benchmarks *benchmarks*)))

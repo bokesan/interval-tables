@@ -13,3 +13,10 @@
   :depends-on ("fiveam" "check-it" "interval-tables")
   :components ((:file "tests"))
   :perform (test-op (o c) (symbol-call :fiveam :run-all-tests)))
+
+(defsystem "interval-tables/benchmarks"
+  :depends-on ("interval-tables")
+  :serial t  
+  :components ((:file "low-crit")
+	       (:file "benchmarks"))
+  :perform (test-op (o c) (symbol-call :benchmarks :run-all-benchmarks)))
