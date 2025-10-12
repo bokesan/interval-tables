@@ -44,17 +44,23 @@ followed by a short description of the time units."
 	  (incf e 3))
 	(format nil "~G s" k))))
 
-(declaim (inline make-benchmark benchmark-name benchmark-proc benchmake-init benchmark-cleanup))
+(declaim (inline make-benchmark benchmark-p benchmark-name benchmark-proc
+		 benchmake-init benchmark-cleanup benchmark-per-run-p))
 (defstruct benchmark
   (name nil :type string :read-only t)
   (proc nil :type function :read-only t)
   (init nil :type (or null function) :read-only t)
-  (cleanup nil :type (or null function) :read-only t))
+  (cleanup nil :type (or null function) :read-only t)
+  (per-run-p nil :read-only t))
 
 #+sbcl (declaim (sb-ext:freeze-type benchmark))
 
 
-(declaim (ftype (function ((fast-integer 1) function) integer) run-repeatedly))
+(declaim
+ (ftype (function ((fast-integer 1) function) integer) run-repeatedly)
+ (ftype (function ((fast-integer 1) function t) integer) run-repeatedly-with-env)
+ (ftype (function ((fast-integer 1) benchmark) integer) run-repeatedly-with-env-per-run))
+
 (defun run-repeatedly (iters proc)
   (declare (type (fast-integer 1) iters)
 	   (type function proc))
@@ -64,25 +70,56 @@ followed by a short description of the time units."
       (funcall proc))
     (- (get-internal-run-time) start)))
 
-(declaim (notinline run-repeatedly))
+(defun run-repeatedly-with-env (iters proc env)
+  (declare (type (fast-integer 1) iters)
+	   (type function proc))
+  (let ((start (get-internal-run-time)))
+    (declare (optimize speed (safety 0)))
+    (dotimes (i iters)
+      (funcall proc env))
+    (- (get-internal-run-time) start)))
+
+(defun run-repeatedly-with-env-per-run (iters bm)
+  (declare (type (fast-integer 1) iters)
+	   (type benchmark bm))
+  (let ((time 0))
+    (dotimes (i iters)
+      (let* ((env (funcall (benchmark-init bm)))
+	     (start (get-internal-run-time)))
+	(funcall (benchmark-proc bm) env)
+	(incf time (max 0 (- (get-internal-run-time) start)))
+	(when (benchmark-cleanup bm)
+	  (funcall (benchmark-cleanup bm) env))))
+    time))
+
+(declaim (notinline run-repeatedly run-repeatedly-with-env run-repeatedly-with-env-per-run))
 
 
-(declaim (ftype (function (function &key (:time real))
+
+(declaim (ftype (function ((or benchmark function) &key (:time real))
 			  (values real unsigned-byte real))
 		measure))
-(defun measure (proc &key (time *seconds-per-benchmark*))
+(defun measure (benchmark &key (time *seconds-per-benchmark*))
   (let ((timeout (* time internal-time-units-per-second))
+	(env (if (and (benchmark-p benchmark) (benchmark-init benchmark))
+		 (funcall (benchmark-init benchmark))
+		 nil))
+	(per-run-p (and (benchmark-p benchmark) (benchmark-per-run-p benchmark)))
+	(proc (if (benchmark-p benchmark) (benchmark-proc benchmark) benchmark))
 	(start (get-internal-real-time)))
-    (do* ((iters 1 (ceiling (* iters +growth-factor+)))
-	  (result (run-repeatedly iters proc)
-		  (run-repeatedly iters proc))
-	  (elapsed (- (get-internal-real-time) start)
-		   (- (get-internal-real-time) start)))
-	((> elapsed timeout)
-	 (values (/ result (* iters internal-time-units-per-second))
-		 iters
-		 (/ elapsed internal-time-units-per-second)))
-      (setq result (run-repeatedly iters proc)))))
+    (declare (type function proc))
+    (flet ((run (iters)
+	     (cond ((null env) (run-repeatedly iters proc))
+		   ((not per-run-p) (run-repeatedly-with-env iters proc env))
+		   (t (run-repeatedly-with-env-per-run iters benchmark)))))
+      (do* ((iters 1 (ceiling (* iters +growth-factor+)))
+	    (result (run iters) (run iters))
+	    (elapsed (- (get-internal-real-time) start)
+		     (- (get-internal-real-time) start)))
+	   ((> elapsed timeout)
+	    (values (/ result (* iters internal-time-units-per-second))
+		    iters
+		    (/ elapsed internal-time-units-per-second)))))))
 
 (declaim (ftype (function (list string) string) stringify-path))
 (defun stringify-path (path name)
@@ -134,7 +171,7 @@ followed by a short description of the time units."
 		     (terpri)))))
 	     (run (path bm)
 	       (declare (type list path))
-	       (cond ((benchmark-p bm) (run-bm path (benchmark-name bm) (benchmark-proc bm)))
+	       (cond ((benchmark-p bm) (run-bm path (benchmark-name bm) bm))
 		     ((functionp bm) (run-bm path (format nil "~S" bm) bm))
 		     ((consp bm)
 		      (cond ((label-p (car bm))
@@ -149,16 +186,12 @@ followed by a short description of the time units."
 		     (t (error "invalid benchmark: ~S" bm)))))
       (run nil benchmarks))))
 
-(defmacro bench (arg1 &rest args)
-  "Define a single benchmark test.
-Can take various forms:
-(bench form ...)
-(bench name form ...)"
-  (let ((name "")
-	(forms args))
-    (declare (type string name))
-    (if (or (stringp arg1) (symbolp arg1) (characterp arg1))
-	(setq name (string arg1))
-	(setq name (format nil "~S" arg1)
-	      forms (cons arg1 args)))
-    `(make-benchmark :name ,name :proc #'(lambda () ,@forms))))
+(defmacro bench (name form &key init cleanup per-run)
+  "Define a single benchmark test."
+  `(make-benchmark :name ,name
+		   :proc ,(if (and (consp form) (eq (car form) 'function))
+			      form
+			      `(function (lambda () ,form)))
+		   ,@(if init `(:init #'(lambda () ,init)) nil)
+		   ,@(if cleanup `(:cleanup #'(lambda () ,cleanup)) nil)
+		   ,@(if per-run '(:per-run-p t) nil)))
