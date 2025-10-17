@@ -30,7 +30,7 @@
 		(t                    "~,3F ~A"))
 	  time unit))
 
-(declaim (ftype (function (real) string) format-internal-time))
+(declaim (ftype (function (real) string) format-seconds))
 (defun format-seconds (k)
   "Convert seconds to a string.
 The string will consist of four decimal places,
@@ -43,6 +43,7 @@ followed by a short description of the time units."
 	    (return-from format-seconds (with u (* k (expt 10 e)))))
 	  (incf e 3))
 	(format nil "~G s" k))))
+
 
 (declaim (inline make-benchmark benchmark-p benchmark-name benchmark-proc
 		 benchmake-init benchmark-cleanup benchmark-per-run-p))
