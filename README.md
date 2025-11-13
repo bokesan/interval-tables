@@ -41,7 +41,7 @@ Search for intervals containing a point or intersecting a given interval with `m
 (map-intervals 'list #'list *table* :containing 9)
     => ((1 10 "E1") (5 15 "E5"))
 (map-intervals 'vector #'(lambda (lo hi val) val) *table* :intersecting '(13 50))
-    => #( "E5" "E2")
+    => #("E5" "E2")
 ```
 
 Or you can use `do-intervals`:
